@@ -10,6 +10,7 @@ use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Contracts\OwnershipAdoptionMetadataValidator;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
+use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
@@ -187,7 +188,7 @@ final readonly class OwnershipAdoptionStore
         if ((! is_int($persistedKey) && ! is_string($persistedKey)) || (string) $persistedKey !== $assignment->recordId) {
             throw new OwnershipConfigurationInvalid('A mapping must name the exact existing physical source record.');
         }
-        if ($definition->ownership->owner !== null && $native::class !== $definition->ownership->owner) {
+        if ($definition->ownership->owner !== null && $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner)) {
             throw new OwnershipViolation('The mapping owner differs from the declared concrete owner.');
         }
         $nodes = 0;

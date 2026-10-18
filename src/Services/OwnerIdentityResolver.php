@@ -47,7 +47,7 @@ final readonly class OwnerIdentityResolver
             || $canonical->getKeyType() !== $reference->keyType) {
             throw new OwnershipViolation;
         }
-        $owner = $canonical->newQuery()->whereKey($reference->key)->first();
+        $owner = $canonical->newQuery()->useWritePdo()->whereKey($reference->key)->first();
         $key = $owner?->getKey();
         if ($owner === null || (! is_int($key) && ! is_string($key))
             || (string) $key !== $reference->key || $this->reference($owner) != $reference) {

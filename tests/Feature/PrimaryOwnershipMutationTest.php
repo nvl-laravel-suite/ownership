@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
+use Nvl\Ownership\Services\OwnershipRunner;
+use Nvl\Ownership\Tests\Fixtures\Actor;
+use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
+use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
+use Nvl\Support\Ownership\Contracts\OwnershipBoundary;
+use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
+use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+
+beforeEach(function (): void {
+    $this->allowOwners();
+    ResourceScenario::install($this->app);
+});
+
+it('rejects raw primary owner changes and ordinary pivot attach detach and update conveniences', function (): void {
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        $asset = PivotAsset::query()->findOrFail(1);
+        expect(fn () => $asset->companies()->detach())->toThrow(QueryException::class)
+            ->and(fn () => $asset->companies()->attach(8, ['owner_scope_key' => $asset->getRawOriginal('owner_scope_key')]))->toThrow(QueryException::class)
+            ->and(fn () => $asset->companies()->updateExistingPivot(7, ['company_id' => 8]))->toThrow(QueryException::class)
+            ->and(fn () => DB::table('ownership_test_column_assets')->where('id', 1)->update(['company_id' => 8]))->toThrow(QueryException::class);
+        app(OwnershipBoundary::class)->assertRecord($asset, 'assets.pivot');
+    });
+});
+
+it('rejects null and invalid physical partitions and a mismatched concrete child partition', function (): void {
+    $scope = DB::table('ownership_test_column_assets')->where('id', 1)->value('owner_scope_key');
+    expect(fn () => DB::table('ownership_test_column_assets')->insert(['id' => 3, 'company_id' => 7, 'name' => 'null', 'owner_scope_key' => null]))->toThrow(QueryException::class)
+        ->and(fn () => DB::table('ownership_test_column_assets')->insert(['id' => 3, 'company_id' => 7, 'name' => 'invalid', 'owner_scope_key' => 'owner:invalid']))->toThrow(QueryException::class)
+        ->and(fn () => DB::table('ownership_test_child_assets')->insert(['id' => 3, 'asset_id' => 2, 'name' => 'foreign-child', 'owner_scope_key' => $scope]))->toThrow(QueryException::class);
+});
+
+it('does not trust a loaded pivot relation and retains source cascade deletion', function (): void {
+    $foreign = PivotAsset::withoutGlobalScopes()->findOrFail(2);
+    $foreign->setRelation('companies', Company::query()->whereKey(7)->get());
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function () use ($foreign): void {
+        expect(fn () => app(OwnershipBoundary::class)->assertRecord($foreign, 'assets.pivot'))->toThrow(OwnershipViolation::class);
+        PivotAsset::query()->findOrFail(1)->delete();
+        expect(DB::table('ownership_test_asset_owners')->where('asset_id', 1)->exists())->toBeFalse()
+            ->and(DB::table('ownership_test_asset_owners')->where('asset_id', 2)->exists())->toBeTrue();
+    });
+});
+
+it('refuses access when a live partition constraint is missing despite active adoption markers', function (): void {
+    $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_pivot_assets|insert|valid'), 0, 32);
+    $connection = DB::connection();
+    $statement = 'DROP TRIGGER '.$connection->getQueryGrammar()->wrap($name);
+    if ($connection->getDriverName() === 'pgsql') {
+        $statement .= ' ON ownership_test_pivot_assets';
+    }
+    $connection->statement($statement);
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
+    });
+});
+
+it('denies a missing primary pivot and never uses its loaded owner collection as a fallback', function (): void {
+    $connection = DB::connection();
+    $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_asset_owners|delete|primary'), 0, 32);
+    $statement = 'DROP TRIGGER '.$connection->getQueryGrammar()->wrap($name);
+    if ($connection->getDriverName() === 'pgsql') {
+        $statement .= ' ON ownership_test_asset_owners';
+    }
+    $connection->statement($statement);
+    $connection->table('ownership_test_asset_owners')->where('asset_id', 1)->delete();
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
+    });
+});

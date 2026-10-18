@@ -58,8 +58,7 @@ final readonly class OwnershipAdoptionGraph
             }
             $visiting[$package] = true;
             foreach ($adapters[$package]->resources() as $key) {
-                $parent = $this->resources->get($key)->parentResource;
-                if ($parent !== null) {
+                foreach ($this->resources->get($key)->parents() as $parent) {
                     $parentPackage = $owners[$parent] ?? throw new OwnershipConfigurationInvalid('A parent has no adoption adapter.');
                     if ($parentPackage !== $package) {
                         $visit($parentPackage);

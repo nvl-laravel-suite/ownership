@@ -106,6 +106,16 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Services\\OwnershipWriter": {
+            "kind": "class",
+            "file": "src/Services/OwnershipWriter.php",
+            "methods": [
+                "__construct",
+                "create"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\ValueObjects\\OwnershipAdoptionPlan": {
             "kind": "class",
             "file": "src/ValueObjects/OwnershipAdoptionPlan.php",
@@ -118,6 +128,16 @@
                 "id",
                 "mappingHash"
             ],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipAssignment": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipAssignment.php",
+            "methods": [
+                "__construct",
+                "attributes"
+            ],
+            "properties": [],
             "constants": []
         },
         "Nvl\\Ownership\\ValueObjects\\OwnershipBackfillResult": {

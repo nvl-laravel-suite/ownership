@@ -32,6 +32,14 @@ final class OwnershipAdoptionScope implements OwnershipMaintenanceState
         return $this->invocation !== null;
     }
 
+    /** Allow schema helpers only in the coordinator's explicit nontransactional DDL phases. */
+    public function assertSchemaAllowed(): void
+    {
+        if ($this->invocation === null || ! in_array($this->invocation['phase'], ['prepare', 'activate'], true)) {
+            throw new OwnershipViolation('Ownership schema changes require a coordinated prepare or activate phase.');
+        }
+    }
+
     /** Reject publication before any queue payload or deferred callback is retained. */
     public function assertQueueAllowed(): void
     {

@@ -31,7 +31,7 @@ it('propagates actual source database failures instead of treating them as unado
     expect(fn () => (new PersistedOwnershipStorage)->assertUnadopted(DB::connection('invalid_source')))->toThrow(QueryException::class);
 });
 
-it('keeps real prepared source markers effective in a cold process with both runtimes absent', function (): void {
+it('keeps real prepared source markers effective in a cold process with both runtimes absent', function (bool $renamedProtocol): void {
     $path = tempnam(sys_get_temp_dir(), 'nvl-ownership-retained-');
     $configuration = ['driver' => 'sqlite', 'database' => $path, 'prefix' => '', 'foreign_key_constraints' => true];
     config(['database.connections.ownership_persisted' => $configuration, 'nvl-ownership.connection' => 'ownership_persisted']);
@@ -71,8 +71,14 @@ it('keeps real prepared source markers effective in a cold process with both run
         }
     });
     try {
+        config(['ownership_test.callback' => static function (): void {
+            DB::getSchemaBuilder()->table('ownership_test_records', static fn (Blueprint $table) => $table->string('owner_scope_key', 191)->nullable());
+        }]);
         $owner = app(OwnerIdentityResolver::class)->reference(Company::query()->findOrFail(7));
         app(OwnershipAdoptionCoordinator::class)->prepare(['fixture'], [new OwnershipMapping('fixture.records', '1', $owner)], new OwnershipOperation('prepare-retained', 'operator', '1'));
+        if ($renamedProtocol) {
+            $schema->rename('nvl_ownership_resource_markers', 'previous_nvl_ownership_resource_markers');
+        }
         $probe = new Process([PHP_BINARY, __DIR__.'/../Fixtures/Adoption/runtime-removed-probe.php', json_encode($configuration, JSON_THROW_ON_ERROR)], timeout: 10);
         $probe->mustRun();
         expect($probe->getOutput())->toBe('blocked');
@@ -82,4 +88,4 @@ it('keeps real prepared source markers effective in a cold process with both run
         @unlink($path);
         @unlink($path.'.nvl-adoption.lock');
     }
-});
+})->with(['original protocol name' => false, 'previous prefix remains discoverable' => true]);

@@ -12,7 +12,7 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 final readonly class OwnershipConfigurationFingerprint
 {
     /** Retain only declaration and storage services. */
-    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections) {}
+    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections, private InheritedOwnershipResolver $parents) {}
 
     /** Hash one exact declaration against fresh operation-local store facts.
      * @param  array<int, string>  $stores
@@ -22,10 +22,12 @@ final readonly class OwnershipConfigurationFingerprint
         $definition = $this->resources->get($resource);
         $model = new $definition->model;
         $owner = $definition->ownership->owner;
+        $owner = $owner === null ? null : $this->owners->model($owner);
         $native = $owner === null ? null : new $owner;
 
         return hash('sha256', json_encode([
             'definition' => $definition,
+            'relation' => $definition->ownership->strategy === 'inherited' ? $this->parents->fingerprint($definition) : null,
             'model' => [$model::class, $model->getMorphClass(), $model->getTable(), $model->getKeyName(), $model->getKeyType(), $model->getConnection()->getName(), $this->store($model->getConnection(), $stores)],
             'owner' => $native === null ? null : [$native::class, $this->owners->aliasFor($native), $native->getTable(), $native->getKeyName(), $native->getKeyType(), $native->getConnection()->getName(), $this->store($native->getConnection(), $stores)],
             'coordinator' => [$this->connections->core()->getName(), $this->store($this->connections->core(), $stores)],

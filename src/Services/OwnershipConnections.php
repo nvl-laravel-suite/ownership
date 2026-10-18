@@ -8,6 +8,7 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Str;
 use Nvl\Support\Config\PackageStorage;
+use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
@@ -16,7 +17,7 @@ use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 final readonly class OwnershipConnections
 {
     /** Retain connection services and immutable declarations. */
-    public function __construct(private DatabaseManager $database, private OwnershipResourceRegistry $resources) {}
+    public function __construct(private DatabaseManager $database, private OwnershipResourceRegistry $resources, private OwnerRegistry $owners) {}
 
     /** Return the configured coordinator connection. */
     public function core(): Connection
@@ -80,6 +81,7 @@ final readonly class OwnershipConnections
             $sources[spl_object_id($source)] = $source;
             $ownerClass = $definition->ownership->owner;
             if ($ownerClass !== null) {
+                $ownerClass = $this->owners->model($ownerClass);
                 $owner = (new $ownerClass)->getConnection();
                 $sources[spl_object_id($owner)] = $owner;
             }

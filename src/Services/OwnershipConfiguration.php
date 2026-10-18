@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nvl\Ownership\Services;
 
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Database\Events\TransactionCommitting;
 use Nvl\Ownership\Compatibility\LegacyResourceReadiness;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
@@ -31,6 +32,9 @@ final readonly class OwnershipConfiguration
         $this->validate();
         if ($this->configuration->get('nvl-ownership.enabled') !== true) {
             throw new OwnershipViolation('Ownership execution is disabled.');
+        }
+        if (! class_exists(TransactionCommitting::class)) {
+            throw new OwnershipConfigurationInvalid('The framework must support ownership fencing before native transaction commit.');
         }
         $this->resources->freeze();
         $this->readiness->assertReady();
