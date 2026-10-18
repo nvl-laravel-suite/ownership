@@ -41,7 +41,7 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         $rows = $model->newQuery()->when($cursor !== null, fn ($query) => $query->where('id', '>', $cursor))->orderBy('id')->limit($limit)->get();
         foreach ($rows as $row) {
             $assignment = app(OwnershipAdoptionStore::class)->forRecord($plan, $key, $row->nativeId());
-            $row->forceFill(['company_id' => $assignment->owner->key])->save();
+            $row->forceFill(['company_id' => $assignment->requireOwner()->key])->save();
         }
 
         $last = $rows->last();
@@ -57,7 +57,7 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         foreach ($model->newQuery()->get() as $row) {
             $assignment = app(OwnershipAdoptionStore::class)->forRecord($plan, $key, $row->nativeId());
             $nativeOwner = $row->getAttribute('company_id');
-            if ((! is_int($nativeOwner) && ! is_string($nativeOwner)) || (string) $nativeOwner !== $assignment->owner->key) {
+            if ((! is_int($nativeOwner) && ! is_string($nativeOwner)) || (string) $nativeOwner !== $assignment->requireOwner()->key) {
                 return new OwnershipVerification(['owner_mismatch']);
             }
         }

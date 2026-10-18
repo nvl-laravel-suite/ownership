@@ -56,4 +56,10 @@ final class ScopedOwnershipContext implements OwnershipContext
         $this->invalid = true;
         $this->current = new OwnershipSnapshot(OwnershipContextMode::Unresolved);
     }
+
+    /** @internal Report whether failed cleanup revoked the current lifecycle. */
+    public function invalid(): bool
+    {
+        return $this->invalid;
+    }
 }

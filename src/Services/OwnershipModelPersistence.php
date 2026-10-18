@@ -8,8 +8,10 @@ use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
+use Nvl\Ownership\ValueObjects\OwnershipAssignment;
 use Nvl\Support\Ownership\Contracts\OwnershipModelGuard;
 use Nvl\Support\Ownership\Contracts\OwnershipModelPersistence as PersistenceContract;
+use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\LegacyOwnershipModelPersistence;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
@@ -24,6 +26,29 @@ final readonly class OwnershipModelPersistence implements PersistenceContract
     {
         if (! $this->owned($model)) {
             return $this->container->make(LegacyOwnershipModelPersistence::class)->save($model, $persist);
+        }
+        $resource = $this->container->make(OwnershipResourceRegistry::class)->forModel($model);
+        if (! $model->exists && $resource->ownership->strategy === 'captured'
+            && ! $this->container->make(OwnershipCreationScope::class)->activeFor($model::class)) {
+            $saved = false;
+            $this->container->make(OwnershipWriter::class)->create($model::class, function (OwnershipAssignment $assignment) use ($model, $persist, &$saved): Model {
+                $provided = $model->getAttributes();
+                foreach ($assignment->attributes() as $field => $expected) {
+                    if (array_key_exists($field, $provided) && $provided[$field] !== $expected) {
+                        throw new OwnershipViolation('Captured ownership is assigned only by the source writer.');
+                    }
+                }
+                $model->forceFill($assignment->attributes());
+                $this->container->make(OwnershipModelGuard::class)->saving($model);
+                $saved = $persist();
+                if (! $saved) {
+                    throw new OwnershipViolation('The captured operation was not persisted.');
+                }
+
+                return $model;
+            });
+
+            return $saved;
         }
 
         return $model->getConnection()->transaction(function () use ($model, $persist): bool {

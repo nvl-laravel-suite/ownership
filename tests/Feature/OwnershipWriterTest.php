@@ -9,6 +9,7 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\OwnershipWriter;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\CapturedOperation;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
@@ -18,6 +19,17 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 beforeEach(function (): void {
     $this->allowOwners();
     ResourceScenario::install($this->app);
+});
+
+it('coordinates package captured roots without accepting caller supplied ownership', function (): void {
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        $fact = new CapturedOperation(['id' => 30, 'name' => 'package fact']);
+        expect($fact->saveQuietly())->toBeTrue()
+            ->and($fact->getRawOriginal('owner_scope_key'))->toStartWith('owner:');
+        $forged = new CapturedOperation(['id' => 31, 'name' => 'forged', 'owner_scope_key' => 'central']);
+        expect(fn () => $forged->saveQuietly())->toThrow(OwnershipViolation::class);
+    });
+    expect(DB::table('ownership_test_captured_operations')->where('id', 31)->exists())->toBeFalse();
 });
 
 it('atomically creates the concrete pivot owner and canonical partition on the source connection', function (): void {

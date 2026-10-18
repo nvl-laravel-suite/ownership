@@ -14,6 +14,16 @@ final class OwnershipCreationScope
     /** @var list<array{class: class-string<Model>, attributes: array<string, int|string|null>, record: Model|null}> */
     private array $frames = [];
 
+    /** Package captured roots can join an existing writer without opening another permit.
+     * @param  class-string<Model>  $class
+     */
+    public function activeFor(string $class): bool
+    {
+        $index = array_key_last($this->frames);
+
+        return $index !== null && $this->frames[$index]['class'] === $class;
+    }
+
     /**
      * Restore the previous write permit even when persistence or assignment fails.
      *

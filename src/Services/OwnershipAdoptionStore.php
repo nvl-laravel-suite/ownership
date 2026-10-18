@@ -84,7 +84,7 @@ final readonly class OwnershipAdoptionStore
             if ((clone $query)->where('run_id', $runId)->where('resource', $assignment->resource)->where('record_id', $assignment->recordId)->exists()) {
                 throw new OwnershipConfigurationInvalid('Duplicate or conflicting record assignment.');
             }
-            $query->insert(['run_id' => $runId, 'resource' => $assignment->resource, 'record_id' => $assignment->recordId, 'owner_reference' => json_encode($assignment->owner->toArray(), JSON_THROW_ON_ERROR), 'legacy_tenant_id' => $assignment->legacyTenantId, 'metadata' => $metadata]);
+            $query->insert(['run_id' => $runId, 'resource' => $assignment->resource, 'record_id' => $assignment->recordId, 'owner_reference' => json_encode($assignment->owner?->toArray(), JSON_THROW_ON_ERROR), 'legacy_tenant_id' => $assignment->legacyTenantId, 'metadata' => $metadata]);
         }
 
         return $this->mappingHash($runId, $graph);
@@ -107,7 +107,7 @@ final readonly class OwnershipAdoptionStore
         foreach ($connection->table(Tables::Mappings)->where('run_id', $runId)->orderByRaw($ordering)->cursor() as $row) {
             $assignment = $this->decodeMapping($row);
             $canonical = $this->validateAssignment($runId, $assignment, $graph);
-            hash_update($hash, json_encode([$assignment->resource, $assignment->recordId, $assignment->owner->toArray(), $canonical, $assignment->legacyTenantId], JSON_THROW_ON_ERROR)."\n");
+            hash_update($hash, json_encode([$assignment->resource, $assignment->recordId, $assignment->owner?->toArray(), $canonical, $assignment->legacyTenantId], JSON_THROW_ON_ERROR)."\n");
         }
 
         return hash_final($hash);
@@ -150,7 +150,7 @@ final readonly class OwnershipAdoptionStore
         }
         $owner = json_decode($row->owner_reference, true, 32, JSON_THROW_ON_ERROR);
         $decoded = json_decode($row->metadata, true, 32, JSON_THROW_ON_ERROR);
-        if (! is_array($owner) || ! is_array($decoded)) {
+        if (($owner !== null && ! is_array($owner)) || ! is_array($decoded)) {
             throw new OwnershipConfigurationInvalid('Persisted ownership requires scalar JSON maps.');
         }
         $metadata = [];
@@ -161,7 +161,7 @@ final readonly class OwnershipAdoptionStore
             $metadata[$key] = $value;
         }
 
-        return new OwnershipMapping($row->resource, $row->record_id, OwnerReference::fromArray($owner), $metadata, $row->legacy_tenant_id);
+        return new OwnershipMapping($row->resource, $row->record_id, $owner === null ? null : OwnerReference::fromArray($owner), $metadata, $row->legacy_tenant_id);
     }
 
     /**
@@ -180,15 +180,22 @@ final readonly class OwnershipAdoptionStore
             throw new OwnershipConfigurationInvalid('Legacy tenant references require their original canonical UUID.');
         }
         $owner = $graph['owners'][$assignment->resource] ?? throw new OwnershipConfigurationInvalid('A mapping names a resource outside the selected graph.');
-        $native = $this->container->make(OwnerIdentityResolver::class)->resolve($assignment->owner);
-        $this->container->make(OwnerAvailability::class)->assertAvailable($native);
         $definition = $this->container->make(OwnershipResourceRegistry::class)->get($assignment->resource);
+        $native = null;
+        if ($assignment->owner === null) {
+            if (! $definition->allowsCentral || $definition->ownership->strategy !== 'captured' || $assignment->legacyTenantId !== null) {
+                throw new OwnershipConfigurationInvalid('Central disposition requires an explicitly central-capable captured resource and no legacy tenant.');
+            }
+        } else {
+            $native = $this->container->make(OwnerIdentityResolver::class)->resolve($assignment->owner);
+            $this->container->make(OwnerAvailability::class)->assertAvailable($native);
+        }
         $source = new $definition->model;
         $persistedKey = $source->getConnection()->table($source->getTable())->useWritePdo()->where($source->getKeyName(), $assignment->recordId)->value($source->getKeyName());
         if ((! is_int($persistedKey) && ! is_string($persistedKey)) || (string) $persistedKey !== $assignment->recordId) {
             throw new OwnershipConfigurationInvalid('A mapping must name the exact existing physical source record.');
         }
-        if ($definition->ownership->owner !== null && $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner)) {
+        if ($definition->ownership->owner !== null && ($native === null || $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner))) {
             throw new OwnershipViolation('The mapping owner differs from the declared concrete owner.');
         }
         $nodes = 0;

@@ -81,6 +81,15 @@ it('denies maintenance adoption without fresh host authorization', function (): 
     expect(DB::table('nvl_ownership_adoption_runs')->count())->toBe(0);
 });
 
+it('rejects an explicit central mapping for a resource that requires a native owner', function (): void {
+    $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+    {
+        public function authorize(OwnershipOperation $operation): void {}
+    });
+    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], [new OwnershipMapping('fixture.records', '1', null), $this->mappings[1]], $this->operation))
+        ->toThrow(OwnershipConfigurationInvalid::class);
+});
+
 it('keeps interrupted multi-source activation closed and resumes the identical plan', function (): void {
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
     {

@@ -156,7 +156,8 @@
             "kind": "class",
             "file": "src/ValueObjects/OwnershipMapping.php",
             "methods": [
-                "__construct"
+                "__construct",
+                "requireOwner"
             ],
             "properties": [
                 "legacyTenantId",

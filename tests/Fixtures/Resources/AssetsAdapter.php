@@ -45,13 +45,13 @@ final readonly class AssetsAdapter implements OwnershipAdoptionAdapter
                     throw new \RuntimeException('Fixture IDs must be native scalar keys.');
                 }
                 $mapping = $this->mappings->forRecord($plan, $resource, (string) $row->id);
-                $attributes = ['owner_scope_key' => $mapping->owner->scopeKey()];
+                $attributes = ['owner_scope_key' => $mapping->requireOwner()->scopeKey()];
                 if ($definition->ownership->strategy === 'captured') {
-                    $attributes['owner_reference'] = json_encode($mapping->owner->toArray(), JSON_THROW_ON_ERROR);
+                    $attributes['owner_reference'] = json_encode($mapping->requireOwner()->toArray(), JSON_THROW_ON_ERROR);
                 }
                 $connection->table($model->getTable())->where('id', $row->id)->update($attributes);
                 if ($definition->ownership->strategy === 'pivot') {
-                    $connection->table('ownership_test_asset_owners')->insertOrIgnore(['asset_id' => $row->id, 'company_id' => $mapping->owner->key, 'owner_scope_key' => $mapping->owner->scopeKey()]);
+                    $connection->table('ownership_test_asset_owners')->insertOrIgnore(['asset_id' => $row->id, 'company_id' => $mapping->requireOwner()->key, 'owner_scope_key' => $mapping->requireOwner()->scopeKey()]);
                 }
                 $processed++;
             }
