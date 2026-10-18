@@ -53,6 +53,41 @@ final readonly class OwnershipDatabaseConstraints
         $this->trigger($connection, $table, 'update', 'immutable', '('.$invalid.') OR (OLD.'.$wrap('owner_scope_key').' IS NOT NULL AND ('.implode(' OR ', $changes).'))');
     }
 
+    /** Enforce an additional concrete reference in the same native owner partition. */
+    public function reference(Connection $connection, string $table, string $foreignKey, string $parentTable, string $parentKey, bool $nullable = false): void
+    {
+        $grammar = $connection->getQueryGrammar();
+        $foreign = 'NEW.'.$grammar->wrap($foreignKey);
+        $missing = 'NOT EXISTS (SELECT 1 FROM '.$grammar->wrapTable($parentTable).' WHERE '.$grammar->wrap($parentKey).' = '.$foreign.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').')';
+        $invalid = $nullable ? $foreign.' IS NOT NULL AND '.$missing : $foreign.' IS NULL OR '.$missing;
+        foreach (['insert', 'update'] as $event) {
+            $this->trigger($connection, $table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey), $invalid);
+        }
+    }
+
+    /** Require each live secondary-reference trigger on the actual physical source. */
+    public function assertReference(Connection $connection, string $table, string $foreignKey, string $parentTable, string $parentKey): void
+    {
+        foreach (['insert', 'update'] as $event) {
+            $name = $this->name($table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey));
+            $present = match ($connection->getDriverName()) {
+                'sqlite' => $connection->selectOne("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?", [$name], false),
+                'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $connection->getTablePrefix().$table], false),
+                'mysql','mariadb' => $connection->selectOne('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = ? AND EVENT_OBJECT_TABLE = ?', [$name, $connection->getTablePrefix().$table], false),
+                default => null,
+            };
+            if ($present === null) {
+                throw new OwnershipSchemaNotReady('A native ownership reference constraint is missing.');
+            }
+        }
+    }
+
+    /** Retain a separate stable identity for each package-declared concrete reference. */
+    private function referencePurpose(string $foreignKey, string $parentTable, string $parentKey): string
+    {
+        return 'reference:'.$foreignKey.':'.$parentTable.':'.$parentKey;
+    }
+
     /** Reject pivot detach while its owning root still exists; root deletion retains native cascade behavior. */
     public function protectPivotDelete(Connection $connection, string $table, string $resourceKey, string $rootTable, string $rootKey): void
     {
