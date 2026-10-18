@@ -1,0 +1,19 @@
+# BEGIN NVL COMPOSER EXPORTS
+/.temp export-ignore
+/build export-ignore
+/coverage export-ignore
+/.phpunit.cache export-ignore
+/.phpunit.result.cache export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
+/tests export-ignore
+/vendor export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/composer.lock export-ignore
+/.DS_Store export-ignore
+/**/.DS_Store export-ignore
+/**/.gitattributes export-ignore
+/**/.gitignore export-ignore
+/**/.gitkeep export-ignore
+# END NVL COMPOSER EXPORTS

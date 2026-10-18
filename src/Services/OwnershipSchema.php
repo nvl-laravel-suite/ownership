@@ -86,7 +86,7 @@ final readonly class OwnershipSchema
                 $connection->getSchemaBuilder()->table($model->getTable(), static fn (Blueprint $table) => $table->json('owner_reference')->nullable(false)->change());
             }
         }
-        $fields = [$model->getKeyName(), 'owner_scope_key'];
+        $fields = array_values(array_unique([$model->getKeyName(), 'owner_scope_key', ...$definition->immutableFields]));
         $parent = null;
         $foreignKey = null;
         $parentKey = null;

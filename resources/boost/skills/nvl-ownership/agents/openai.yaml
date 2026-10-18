@@ -1,0 +1,4 @@
+interface:
+  display_name: "NVL Ownership"
+  short_description: "Native ownership and isolated NVL consumers"
+  default_prompt: "Use $nvl-ownership to integrate native model ownership with NVL."

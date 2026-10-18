@@ -132,7 +132,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
             }
         }
 
-        return $fields;
+        return array_values(array_unique([...$fields, ...$resource->immutableFields]));
     }
 
     /** Preserve native scalar bytes and complete JSON identity across driver serialization. */

@@ -93,5 +93,12 @@
             "homepage": "https://github.com/nicolasvlachos",
             "role": "Developer"
         }
-    ]
+    ],
+    "homepage": "https://github.com/nvl-laravel-suite/ownership",
+    "support": {
+        "source": "https://github.com/nvl-laravel-suite/ownership",
+        "docs": "https://github.com/nvl-laravel-suite/ownership#readme",
+        "issues": "https://github.com/nvl-laravel-suite/ownership/issues",
+        "security": "https://github.com/nvl-laravel-suite/ownership/security/policy"
+    }
 }

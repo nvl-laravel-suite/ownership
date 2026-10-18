@@ -138,6 +138,7 @@ final class OwnershipServiceProvider extends ServiceProvider
             $this->commands([OwnershipDoctorCommand::class]);
         }
         PackageDoctorContributor::register($this->app, 'nvl/ownership', fn (): array => $this->app->make(OwnershipDoctor::class)->inspect());
+        $this->publishes([__DIR__.'/../../resources/boost/skills' => base_path('.agents/skills')], 'nvl-ownership-skills');
         $this->publishes([__DIR__.'/../../config/nvl-ownership.php' => config_path('nvl-ownership.php')], 'nvl-ownership-config');
         $path = __DIR__.'/../../database/migrations/ownership';
         $this->publishesMigrations([$path => database_path('migrations')], 'nvl-ownership-migrations');

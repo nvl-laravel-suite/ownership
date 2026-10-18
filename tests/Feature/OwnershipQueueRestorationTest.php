@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeJob;
+use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Tenancy\Exceptions\TenantBoundaryViolation;
 
 beforeEach(function (): void {
     $this->allowOwners();
@@ -71,4 +75,15 @@ it('preserves semantic envelope equality when a native transport reorders JSON o
     $wire['data']['nvl_ownership']['principal'] = array_reverse($wire['data']['nvl_ownership']['principal'], true);
     (new SyncJob(app(), json_encode($wire, JSON_THROW_ON_ERROR), 'sync', 'default'))->fire();
     expect(array_column(ProbeJob::$observations, 'owner'))->toBe(['7', '7']);
+});
+
+it('raw retries ordinary captured failures without eager native model restoration', function (): void {
+    QueueScenario::install();
+    $payload = ownershipProbePayload(ColumnAsset::withoutGlobalScopes()->findOrFail(1));
+    $id = app('queue.failer')->log('database', 'default', $payload, new RuntimeException('ordinary business failure'));
+    ProbeJob::$observations = [];
+    expect(fn () => Artisan::call('queue:retry', ['id' => [$id]]))->toThrow(TenantBoundaryViolation::class, 'nvl:queue:retry');
+    expect(ProbeJob::$observations)->toBe([]);
+    expect(Artisan::call('nvl:queue:retry', ['id' => [$id]]))->toBe(0);
+    expect(ProbeJob::$observations)->toBe([])->and(DB::table('jobs')->value('payload'))->toBe($payload);
 });

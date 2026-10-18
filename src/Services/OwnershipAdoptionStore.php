@@ -183,8 +183,8 @@ final readonly class OwnershipAdoptionStore
         $definition = $this->container->make(OwnershipResourceRegistry::class)->get($assignment->resource);
         $native = null;
         if ($assignment->owner === null) {
-            if (! $definition->allowsCentral || $definition->ownership->strategy !== 'captured' || $assignment->legacyTenantId !== null) {
-                throw new OwnershipConfigurationInvalid('Central disposition requires an explicitly central-capable captured resource and no legacy tenant.');
+            if (! $definition->allowsCentral || $assignment->legacyTenantId !== null) {
+                throw new OwnershipConfigurationInvalid('Central disposition requires an explicitly central-capable resource and no legacy tenant.');
             }
         } else {
             $native = $this->container->make(OwnerIdentityResolver::class)->resolve($assignment->owner);
@@ -195,7 +195,7 @@ final readonly class OwnershipAdoptionStore
         if ((! is_int($persistedKey) && ! is_string($persistedKey)) || (string) $persistedKey !== $assignment->recordId) {
             throw new OwnershipConfigurationInvalid('A mapping must name the exact existing physical source record.');
         }
-        if ($definition->ownership->owner !== null && ($native === null || $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner))) {
+        if ($assignment->owner !== null && $definition->ownership->owner !== null && $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner)) {
             throw new OwnershipViolation('The mapping owner differs from the declared concrete owner.');
         }
         $nodes = 0;
