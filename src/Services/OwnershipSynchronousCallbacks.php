@@ -8,6 +8,7 @@ use Closure;
 use Illuminate\Bus\Dispatcher as NativeDispatcher;
 use Illuminate\Contracts\Bus\Dispatcher as DispatcherContract;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
+use Nvl\Support\Ownership\Services\OwnershipBusDispatcher;
 use ReflectionProperty;
 
 /** Preserves native host response scheduling while synchronous privileged callbacks are fenced. @internal */
@@ -23,7 +24,7 @@ final readonly class OwnershipSynchronousCallbacks
      */
     public function run(DispatcherContract $dispatcher, Closure $callback): mixed
     {
-        if (! $dispatcher instanceof NativeDispatcher || $dispatcher::class !== NativeDispatcher::class) {
+        if (! $dispatcher instanceof NativeDispatcher || ! in_array($dispatcher::class, [NativeDispatcher::class, OwnershipBusDispatcher::class], true)) {
             throw new OwnershipConfigurationInvalid('Ownership maintenance requires the native Laravel bus dispatcher for response dispatch fencing.');
         }
         $flag = new ReflectionProperty(NativeDispatcher::class, 'allowsDispatchingAfterResponses');

@@ -20,4 +20,12 @@ final class Actor extends User
     protected $guarded = [];
 
     public $timestamps = false;
+
+    /** Allow a regression to alter only the actor's effective physical source. */
+    public function getConnectionName(): ?string
+    {
+        $name = config('ownership-test.actor-connection');
+
+        return is_string($name) ? $name : parent::getConnectionName();
+    }
 }

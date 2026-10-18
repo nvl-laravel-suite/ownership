@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Services;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Str;
@@ -84,6 +85,12 @@ final readonly class OwnershipConnections
                 $ownerClass = $this->owners->model($ownerClass);
                 $owner = (new $ownerClass)->getConnection();
                 $sources[spl_object_id($owner)] = $owner;
+            }
+        }
+        foreach ($this->owners->all() as $class) {
+            if (is_a($class, Authenticatable::class, true)) {
+                $source = (new $class)->getConnection();
+                $sources[spl_object_id($source)] = $source;
             }
         }
 

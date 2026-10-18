@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Services;
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Connection;
+use Nvl\Ownership\Contracts\OwnershipActorResolver;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
@@ -12,7 +14,7 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 final readonly class OwnershipConfigurationFingerprint
 {
     /** Retain only declaration and storage services. */
-    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections, private InheritedOwnershipResolver $parents) {}
+    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections, private InheritedOwnershipResolver $parents, private OwnershipActorResolver $actors) {}
 
     /** Hash one exact declaration against fresh operation-local store facts.
      * @param  array<int, string>  $stores
@@ -24,9 +26,18 @@ final readonly class OwnershipConfigurationFingerprint
         $owner = $definition->ownership->owner;
         $owner = $owner === null ? null : $this->owners->model($owner);
         $native = $owner === null ? null : new $owner;
+        $principals = [];
+        foreach ($this->owners->all() as $class) {
+            if (is_a($class, Authenticatable::class, true)) {
+                $actor = new $class;
+                $principals[$class] = [$actor->getTable(), $actor->getKeyName(), $actor->getKeyType(), $actor->getConnection()->getName(), $this->store($actor->getConnection(), $stores)];
+            }
+        }
+        ksort($principals);
 
         return hash('sha256', json_encode([
             'definition' => $definition,
+            'principals' => [$this->actors::class, $principals],
             'relation' => $definition->ownership->strategy === 'inherited' ? $this->parents->fingerprint($definition) : null,
             'model' => [$model::class, $model->getMorphClass(), $model->getTable(), $model->getKeyName(), $model->getKeyType(), $model->getConnection()->getName(), $this->store($model->getConnection(), $stores)],
             'owner' => $native === null ? null : [$native::class, $this->owners->aliasFor($native), $native->getTable(), $native->getKeyName(), $native->getKeyType(), $native->getConnection()->getName(), $this->store($native->getConnection(), $stores)],

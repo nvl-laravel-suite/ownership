@@ -6,6 +6,7 @@ namespace Nvl\Ownership\Tests\Fixtures\Resources;
 
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Foundation\MaintenanceMode;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
@@ -16,12 +17,28 @@ use Nvl\Ownership\Tests\Fixtures\Company;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Support\OwnerRegistry;
+use Nvl\Support\Ownership\Contracts\Ownable;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
 /** Installs a small real adopted graph; no test fabricates readiness markers. */
 final readonly class ResourceScenario
 {
+    /** Register the identical code graph in producers and independent native workers. */
+    public static function register(Container $app): void
+    {
+        $app->make(OwnerRegistry::class)->reference(StringCompany::class, 'ownership-fixture.string-owner');
+        foreach (self::models() as $key => $class) {
+            $app->make(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition($key, 'assets', $class, $class::ownershipDefinition(), parentResource: $key === 'assets.child' ? 'assets.column' : null, parentResources: $key === 'assets.poly' ? ['assets.column', 'assets.string-key'] : []));
+        }
+    }
+
+    /** @return array<string, class-string<Model&Ownable>> */
+    private static function models(): array
+    {
+        return ['assets.column' => ColumnAsset::class, 'assets.pivot' => PivotAsset::class, 'assets.captured' => CapturedOperation::class, 'assets.child' => ChildAsset::class, 'assets.string' => StringAsset::class, 'assets.string-key' => StringKeyAsset::class, 'assets.poly' => PolymorphicAsset::class];
+    }
+
     /** Prepare host-native structures and activate through the same protocol as a consumer. */
     public static function install(Container $app): void
     {
@@ -86,9 +103,8 @@ final readonly class ResourceScenario
             $table->string('name');
         });
         $mappings = [];
-        foreach (['assets.column' => ColumnAsset::class, 'assets.pivot' => PivotAsset::class, 'assets.captured' => CapturedOperation::class, 'assets.child' => ChildAsset::class, 'assets.string' => StringAsset::class, 'assets.string-key' => StringKeyAsset::class, 'assets.poly' => PolymorphicAsset::class] as $key => $class) {
-            $declaration = $class::ownershipDefinition();
-            $app->make(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition($key, 'assets', $class, $declaration, parentResource: $key === 'assets.child' ? 'assets.column' : null, parentResources: $key === 'assets.poly' ? ['assets.column', 'assets.string-key'] : []));
+        self::register($app);
+        foreach (self::models() as $key => $class) {
             foreach ($key === 'assets.string' ? [1 => '007', 2 => '7'] : [1 => 7, 2 => 8] as $id => $company) {
                 $data = ['id' => $id, 'name' => 'private-'.$company];
                 if ($key === 'assets.string-key') {
