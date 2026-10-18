@@ -1,0 +1,59 @@
+{
+    "schema_version": 1,
+    "package": "nvl/ownership",
+    "psr4": {
+        "Nvl\\Ownership\\": "src"
+    },
+    "symbols": {
+        "Nvl\\Ownership\\Contracts\\CentralAccess": {
+            "kind": "interface",
+            "file": "src/Contracts/CentralAccess.php",
+            "methods": [
+                "assertCanRun"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnerAccess": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnerAccess.php",
+            "methods": [
+                "assertCanEnter"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnerAvailability": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnerAvailability.php",
+            "methods": [
+                "assertAvailable"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnerSystemAccess": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnerSystemAccess.php",
+            "methods": [
+                "assertCanRun"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnershipRunner": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipRunner.php",
+            "methods": [
+                "central",
+                "run",
+                "runSystem"
+            ],
+            "properties": [],
+            "constants": []
+        }
+    },
+    "models": {},
+    "capability_relations": {},
+    "tables": {}
+}

@@ -1,0 +1,97 @@
+{
+    "name": "nvl/ownership",
+    "description": "Optional model-declared ownership and isolation boundaries for Laravel",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "ownership",
+        "isolation"
+    ],
+    "require": {
+        "php": "^8.4",
+        "ext-filter": "*",
+        "ext-mbstring": "*",
+        "ext-pdo": "*",
+        "laravel/framework": "^12.0 || ^13.0",
+        "nvl/core": "^5.0",
+        "symfony/http-foundation": "^7.2 || ^8.0",
+        "symfony/http-kernel": "^7.2 || ^8.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.10",
+        "laravel/pint": "^1.27",
+        "mockery/mockery": "^1.6",
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "symfony/process": "^7.2 || ^8.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Nvl\\Ownership\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Nvl\\Ownership\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "analyse": "phpstan analyse --memory-limit=2G",
+        "format": "pint --parallel --format agent",
+        "format:test": "pint --parallel --test --format agent",
+        "quality": [
+            "@format:test",
+            "@analyse",
+            "@test"
+        ],
+        "test": "pest --compact"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "5.x-dev"
+        },
+        "laravel": {
+            "providers": [
+                "Nvl\\Ownership\\Providers\\OwnershipServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "archive": {
+        "exclude": [
+            "/.temp",
+            "/build",
+            "/coverage",
+            "/.phpunit.cache",
+            "/.phpunit.result.cache",
+            "/phpstan.neon.dist",
+            "/phpunit.xml.dist",
+            "/tests",
+            "/vendor",
+            "/.gitattributes",
+            "/.gitignore",
+            "/composer.lock",
+            "/.DS_Store",
+            "/**/.DS_Store",
+            "/**/.gitattributes",
+            "/**/.gitignore",
+            "/**/.gitkeep"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "authors": [
+        {
+            "name": "Nicolas Vlachos",
+            "homepage": "https://github.com/nicolasvlachos",
+            "role": "Developer"
+        }
+    ]
+}

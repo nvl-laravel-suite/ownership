@@ -1,0 +1,16 @@
+{
+    "schema_version": 1,
+    "configs": {
+        "nvl-ownership": {
+            "common": [
+                "enabled",
+                "connection",
+                "migrations.enabled"
+            ],
+            "advanced": [
+                "system_operations",
+                "central_operations"
+            ]
+        }
+    }
+}

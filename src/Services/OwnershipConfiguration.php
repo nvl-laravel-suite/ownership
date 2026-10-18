@@ -1,0 +1,38 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nvl\Ownership\Services;
+
+use Illuminate\Contracts\Config\Repository;
+use Nvl\Ownership\Compatibility\LegacyResourceReadiness;
+use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
+use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+
+/** Validates explicit runtime authority and immutable resource graph completeness. */
+final readonly class OwnershipConfiguration
+{
+    /** Retain configuration and resource declarations only. */
+    public function __construct(private Repository $configuration, private OwnershipResourceRegistry $resources, private LegacyResourceReadiness $readiness) {}
+
+    /** Deny simultaneous authorities and malformed runtime switches. */
+    public function validate(): void
+    {
+        $enabled = $this->configuration->get('nvl-ownership.enabled');
+        if (! is_bool($enabled) || ($enabled && $this->configuration->get('nvl-tenancy.enabled') === true)) {
+            throw new OwnershipConfigurationInvalid('Ownership requires one explicit enforcing runtime.');
+        }
+    }
+
+    /** Require explicit activation and a complete ownership graph. */
+    public function assertReady(): void
+    {
+        $this->validate();
+        if ($this->configuration->get('nvl-ownership.enabled') !== true) {
+            throw new OwnershipViolation('Ownership execution is disabled.');
+        }
+        $this->resources->freeze();
+        $this->readiness->assertReady();
+    }
+}

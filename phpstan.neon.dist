@@ -1,0 +1,12 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/nesbot/carbon/extension.neon
+
+parameters:
+    phpVersion: 80400
+    level: max
+    paths:
+        - src
+        - tests/Fixtures
+    checkModelProperties: true
+    tmpDir: .temp/phpstan
