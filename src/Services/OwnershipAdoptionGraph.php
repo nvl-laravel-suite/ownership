@@ -1,0 +1,90 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nvl\Ownership\Services;
+
+use Illuminate\Container\Container;
+use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
+use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
+use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+
+/**
+ * Resolves the immutable selected graph and canonical-parent closure.
+ *
+ * @internal
+ *
+ * @phpstan-type Graph array{packages: list<string>, resources: list<string>, adapters: array<string, OwnershipAdoptionAdapter>, owners: array<string, string>, manifest: string}
+ */
+final readonly class OwnershipAdoptionGraph
+{
+    /** Resolve scoped adapters only while performing one adoption phase. */
+    public function __construct(private Container $container, private OwnershipAdoptionRegistry $adoptions, private OwnershipResourceRegistry $resources) {}
+
+    /** @param list<string> $packages
+     * @return Graph
+     */
+    public function resolve(array $packages): array
+    {
+        if ($packages === []) {
+            throw new OwnershipConfigurationInvalid('Select a registered adoption package.');
+        }
+        $this->resources->freeze();
+        $adapters = [];
+        $owners = [];
+        $registered = $this->adoptions->all();
+        foreach ($registered as $package => $class) {
+            $adapter = $this->container->make($class);
+            if (! $adapter instanceof OwnershipAdoptionAdapter) {
+                throw new OwnershipConfigurationInvalid('The configured adoption binding violates its phase contract.');
+            }
+            $adapters[$package] = $adapter;
+            foreach ($adapter->resources() as $key) {
+                $this->resources->get($key);
+                if (isset($owners[$key])) {
+                    throw new OwnershipConfigurationInvalid('A resource requires exactly one adoption adapter.');
+                }
+                $owners[$key] = $package;
+            }
+        }
+        $ordered = [];
+        $visiting = [];
+        $visit = function (string $package) use (&$visit, &$ordered, &$visiting, $adapters, $owners): void {
+            if (isset($ordered[$package])) {
+                return;
+            }
+            if (! isset($adapters[$package]) || isset($visiting[$package])) {
+                throw new OwnershipConfigurationInvalid('Unknown or cyclic adoption package.');
+            }
+            $visiting[$package] = true;
+            foreach ($adapters[$package]->resources() as $key) {
+                $parent = $this->resources->get($key)->parentResource;
+                if ($parent !== null) {
+                    $parentPackage = $owners[$parent] ?? throw new OwnershipConfigurationInvalid('A parent has no adoption adapter.');
+                    if ($parentPackage !== $package) {
+                        $visit($parentPackage);
+                    }
+                }
+            }
+            unset($visiting[$package]);
+            $ordered[$package] = $adapters[$package];
+        };
+        sort($packages);
+        foreach (array_unique($packages) as $package) {
+            $visit($package);
+        }
+        $keys = [];
+        $manifest = [];
+        foreach ($ordered as $package => $adapter) {
+            $owned = $adapter->resources();
+            sort($owned);
+            $manifest[$package] = [$registered[$package], $adapter::class, $owned];
+            array_push($keys, ...$owned);
+        }
+        sort($keys);
+        $packages = array_keys($ordered);
+        sort($packages);
+
+        return ['packages' => $packages, 'resources' => $keys, 'adapters' => $ordered, 'owners' => array_intersect_key($owners, array_flip($keys)), 'manifest' => hash('sha256', json_encode($manifest, JSON_THROW_ON_ERROR))];
+    }
+}

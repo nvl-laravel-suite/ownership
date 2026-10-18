@@ -7,6 +7,7 @@ namespace Nvl\Ownership\Tests;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Nvl\Ownership\Contracts\OwnerAccess;
 use Nvl\Ownership\Contracts\OwnerAvailability;
@@ -41,12 +42,29 @@ abstract class OwnershipTestCase extends TestCase
             'nvl-ownership.migrations.enabled' => false,
             'nvl-tenancy.enabled' => false,
         ]);
+        if (getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql') {
+            $primary = getenv('NVL_OWNERSHIP_TEST_DATABASE');
+            $remote = getenv('NVL_OWNERSHIP_TEST_REMOTE_DATABASE');
+            foreach ([$primary, $remote] as $database) {
+                if (! is_string($database) || preg_match('/^nvl_own_test_[a-z0-9_]+$/D', $database) !== 1) {
+                    throw new \RuntimeException('Persistence tests require explicitly dedicated nvl_own_test_ databases.');
+                }
+            }
+            $connection = ['driver' => 'pgsql', 'host' => '/tmp', 'port' => '5432', 'database' => $primary, 'username' => get_current_user(), 'password' => '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer'];
+            $app['config']->set('database.connections.sqlite', $connection);
+            $app['config']->set('database.connections.ownership_remote', [...$connection, 'database' => $remote]);
+        }
     }
 
     /** Build native application fixtures after provider registration has completed. */
     protected function setUp(): void
     {
         parent::setUp();
+        if (getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql') {
+            foreach (['sqlite', 'ownership_remote'] as $connection) {
+                DB::connection($connection)->getSchemaBuilder()->dropAllTables();
+            }
+        }
         Schema::create('ownership_test_companies', static function (Blueprint $table): void {
             $table->unsignedBigInteger('id')->primary();
             $table->boolean('active')->default(true);

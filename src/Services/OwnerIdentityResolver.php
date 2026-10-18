@@ -8,13 +8,14 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
 /** Resolves only declared canonical owner models with native persisted identifiers. */
 final readonly class OwnerIdentityResolver
 {
     /** Retain identity metadata without caching owners or queries. */
-    public function __construct(private OwnerRegistry $owners, private Repository $configuration) {}
+    public function __construct(private OwnerRegistry $owners, private Repository $configuration, private OwnershipConnections $connections) {}
 
     /** Derive identity from an exact declared model and its canonical storage. */
     public function reference(Model $owner): OwnerReference
@@ -56,12 +57,16 @@ final readonly class OwnerIdentityResolver
         return $owner;
     }
 
-    /** Derive configured storage identity without opening a connection. */
+    /** Use durable store identity once the optional protocol has been installed. */
     private function storage(Model $owner): string
     {
         $connection = $owner->getConnectionName() ?? $this->configuration->get('database.default');
         if (! is_string($connection) || $connection === '') {
             throw new OwnershipViolation;
+        }
+
+        if ($owner->getConnection()->getSchemaBuilder()->hasTable(Tables::Stores)) {
+            $connection = $this->connections->identity($owner->getConnection());
         }
 
         return $connection.'.'.$owner->getTable();

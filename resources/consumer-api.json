@@ -41,6 +41,37 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Contracts\\OwnershipAdoptionAccess": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipAdoptionAccess.php",
+            "methods": [
+                "authorize"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnershipAdoptionAdapter": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipAdoptionAdapter.php",
+            "methods": [
+                "activate",
+                "backfill",
+                "prepare",
+                "resources",
+                "verify"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnershipAdoptionMetadataValidator": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipAdoptionMetadataValidator.php",
+            "methods": [
+                "validateAssignment"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\Contracts\\OwnershipRunner": {
             "kind": "interface",
             "file": "src/Contracts/OwnershipRunner.php",
@@ -50,6 +81,95 @@
                 "runSystem"
             ],
             "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Services\\OwnershipAdoptionCoordinator": {
+            "kind": "class",
+            "file": "src/Services/OwnershipAdoptionCoordinator.php",
+            "methods": [
+                "__construct",
+                "activate",
+                "backfill",
+                "prepare",
+                "resume",
+                "verify"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Services\\OwnershipAdoptionRegistry": {
+            "kind": "class",
+            "file": "src/Services/OwnershipAdoptionRegistry.php",
+            "methods": [
+                "register"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipAdoptionPlan": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipAdoptionPlan.php",
+            "methods": [
+                "__construct"
+            ],
+            "properties": [
+                "configurationHash",
+                "connection",
+                "id",
+                "mappingHash"
+            ],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipBackfillResult": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipBackfillResult.php",
+            "methods": [
+                "__construct"
+            ],
+            "properties": [
+                "nextCursor",
+                "processed"
+            ],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipMapping": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipMapping.php",
+            "methods": [
+                "__construct"
+            ],
+            "properties": [
+                "legacyTenantId",
+                "metadata",
+                "owner",
+                "recordId",
+                "resource"
+            ],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipOperation": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipOperation.php",
+            "methods": [
+                "__construct"
+            ],
+            "properties": [
+                "actorId",
+                "actorType",
+                "purpose"
+            ],
+            "constants": []
+        },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipVerification": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipVerification.php",
+            "methods": [
+                "__construct",
+                "passed"
+            ],
+            "properties": [
+                "errors"
+            ],
             "constants": []
         }
     },

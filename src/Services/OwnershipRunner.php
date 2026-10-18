@@ -7,10 +7,14 @@ namespace Nvl\Ownership\Services;
 use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
+use Nvl\Ownership\Contracts\CentralAccess;
 use Nvl\Ownership\Contracts\OwnerAccess;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Contracts\OwnershipRunner as RunnerContract;
+use Nvl\Ownership\Contracts\OwnerSystemAccess;
+use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
@@ -33,6 +37,7 @@ final readonly class OwnershipRunner implements RunnerContract
     public function run(Model $owner, Authenticatable $actor, Closure $operation): mixed
     {
         $this->container->make(OwnershipConfiguration::class)->assertReady();
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
         $identities = $this->container->make(OwnerIdentityResolver::class);
         $reference = $identities->reference($owner);
         $canonical = $identities->resolve($reference);
@@ -47,11 +52,12 @@ final readonly class OwnershipRunner implements RunnerContract
             OwnershipContextMode::Owner,
             $reference,
             ['kind' => 'actor', 'type' => $actor::class, 'id' => (string) $id],
+            generations: $this->container->make(OwnershipInstallationState::class)->generations(),
         ), $operation);
     }
 
     /**
-     * Deny system work until bounded admission can be durably recorded.
+     * Admit allowlisted system work after fresh policy checks and durable audit.
      *
      * @template TResult
      *
@@ -61,12 +67,19 @@ final readonly class OwnershipRunner implements RunnerContract
     public function runSystem(OwnerReference $owner, string $operation, Closure $callback): mixed
     {
         $this->container->make(OwnershipConfiguration::class)->assertReady();
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+        $this->assertOperation('system_operations', $operation);
+        $canonical = $this->container->make(OwnerIdentityResolver::class)->resolve($owner);
+        $this->container->make(OwnerAvailability::class)->assertAvailable($canonical);
+        $this->container->make(OwnerSystemAccess::class)->assertCanRun($operation, $canonical);
+        $generations = $this->container->make(OwnershipInstallationState::class)->generations();
+        $this->container->make(OwnershipOperationRecorder::class)->record(new OwnershipOperation($operation, 'system', $operation), $owner);
 
-        throw new OwnershipViolation('System ownership execution requires durable operation admission.');
+        return $this->within(new OwnershipSnapshot(OwnershipContextMode::Owner, $owner, ['kind' => 'system', 'type' => 'operation', 'id' => $operation], $operation, $generations), $callback);
     }
 
     /**
-     * Deny central work until its capability can be durably recorded.
+     * Admit central capabilities after explicit host policy and durable audit.
      *
      * @template TResult
      *
@@ -76,8 +89,26 @@ final readonly class OwnershipRunner implements RunnerContract
     public function central(string $operation, Authenticatable $actor, Closure $callback): mixed
     {
         $this->container->make(OwnershipConfiguration::class)->assertReady();
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+        $this->assertOperation('central_operations', $operation);
+        $this->container->make(CentralAccess::class)->assertCanRun($operation, $actor);
+        $id = $actor->getAuthIdentifier();
+        if (! is_int($id) && ! is_string($id)) {
+            throw new OwnershipViolation;
+        }
+        $generations = $this->container->make(OwnershipInstallationState::class)->generations();
+        $this->container->make(OwnershipOperationRecorder::class)->record(new OwnershipOperation($operation, $actor::class, (string) $id));
 
-        throw new OwnershipViolation('Central ownership execution requires durable operation admission.');
+        return $this->within(new OwnershipSnapshot(OwnershipContextMode::Central, principal: ['kind' => 'actor', 'type' => $actor::class, 'id' => (string) $id], operation: $operation, generations: $generations), $callback);
+    }
+
+    /** Require an explicit deployment allowlist independently of host authorization. */
+    private function assertOperation(string $key, string $operation): void
+    {
+        $operations = $this->container->make(Repository::class)->get('nvl-ownership.'.$key);
+        if (! is_array($operations) || ! in_array($operation, $operations, true)) {
+            throw new OwnershipViolation('The operation is not allowlisted.');
+        }
     }
 
     /**
