@@ -82,6 +82,32 @@ final readonly class OwnershipDatabaseConstraints
         }
     }
 
+    /** Enforce the closed native morph allowlist and exact textual keys in the same owner partition.
+     * @param  non-empty-list<array{type:string,table:string,key:string}>  $targets
+     */
+    public function polymorphicReference(Connection $connection, string $table, string $typeColumn, string $keyColumn, array $targets): void
+    {
+        $grammar = $connection->getQueryGrammar();
+        $type = 'NEW.'.$grammar->wrap($typeColumn);
+        $key = 'NEW.'.$grammar->wrap($keyColumn);
+        $valid = [];
+        foreach ($targets as $target) {
+            $native = $grammar->wrap($target['key']);
+            $text = match ($connection->getDriverName()) {
+                'pgsql' => '(CAST('.$native.' AS TEXT) COLLATE "C") = ('.$key.' COLLATE "C")',
+                'sqlite' => '(CAST('.$native.' AS TEXT) COLLATE BINARY) = ('.$key.' COLLATE BINARY)',
+                'mysql','mariadb' => 'CAST('.$native.' AS BINARY) = CAST('.$key.' AS BINARY)',
+                default => throw new OwnershipConfigurationInvalid('Unsupported polymorphic ownership constraint driver.'),
+            };
+            $morph = $connection->getPdo()->quote($target['type']);
+            $valid[] = '('.$type.' = '.$morph.' AND EXISTS (SELECT 1 FROM '.$grammar->wrapTable($target['table']).' WHERE '.$text.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').'))';
+        }
+        $invalid = $type.' IS NULL OR '.$key.' IS NULL OR NOT ('.implode(' OR ', $valid).')';
+        foreach (['insert', 'update'] as $event) {
+            $this->trigger($connection, $table, $event, 'polymorphic:'.$typeColumn.':'.$keyColumn, $invalid);
+        }
+    }
+
     /** Retain a separate stable identity for each package-declared concrete reference. */
     private function referencePurpose(string $foreignKey, string $parentTable, string $parentKey): string
     {
