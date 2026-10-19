@@ -7,6 +7,7 @@ namespace Nvl\Ownership\Services;
 use Illuminate\Database\Connection;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
+use Nvl\Support\Ownership\Services\OwnershipConstraintInspector;
 
 /**
  * Enforces immutable partitions and primary pivots on every supported database.
@@ -15,6 +16,9 @@ use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
  */
 final readonly class OwnershipDatabaseConstraints
 {
+    /** Inspect canonical protocol constraint identities. */
+    public function __construct(private OwnershipConstraintInspector $inspector) {}
+
     /**
      * Apply insert/update validity and immutable fields without rebuilding populated SQLite roots.
      *
@@ -87,6 +91,25 @@ final readonly class OwnershipDatabaseConstraints
             $condition = 'OLD.'.$grammar->wrap($statusColumn).' IN ('.$statuses.') AND ('.$condition.')';
         }
         $this->trigger($connection, $table, 'update', 'freeze:'.hash('sha256', json_encode([$fields, $statusColumn, $afterStatuses, $eraseStatuses, $retainStatuses], JSON_THROW_ON_ERROR)), $condition);
+    }
+
+    /** Freeze each assigned external identity while allowing its first provider assignment.
+     * @param  non-empty-list<string>  $fields
+     */
+    public function freezeAssigned(Connection $connection, string $table, array $fields): void
+    {
+        $changes = [];
+        foreach ($fields as $field) {
+            $old = 'OLD.'.$connection->getQueryGrammar()->wrap($field);
+            $new = 'NEW.'.$connection->getQueryGrammar()->wrap($field);
+            $different = match ($connection->getDriverName()) {
+                'pgsql' => $old.' IS DISTINCT FROM '.$new,
+                'mysql', 'mariadb' => 'NOT ('.$old.' <=> '.$new.')',
+                default => $old.' IS NOT '.$new,
+            };
+            $changes[] = '('.$old.' IS NOT NULL AND ('.$different.'))';
+        }
+        $this->trigger($connection, $table, 'update', 'assigned:'.hash('sha256', json_encode($fields, JSON_THROW_ON_ERROR)), implode(' OR ', $changes));
     }
 
     /** Enforce an additional concrete reference in the same native owner partition.
@@ -213,9 +236,6 @@ final readonly class OwnershipDatabaseConstraints
     /** Keep protocol identifiers stable and within every supported engine's length limit. */
     private function name(Connection $connection, string $table, string $event, string $purpose): string
     {
-        [$schema, $logicalTable] = $connection->getSchemaBuilder()->parseSchemaAndTable($table);
-        $physicalTable = ($schema === null ? '' : $schema.'.').$connection->getTablePrefix().$logicalTable;
-
-        return 'nvl_own_'.substr(hash('sha256', $physicalTable.'|'.$event.'|'.$purpose), 0, 32);
+        return $this->inspector->name($connection, $table, $event, $purpose);
     }
 }
