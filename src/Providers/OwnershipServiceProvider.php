@@ -64,6 +64,7 @@ use Nvl\Support\Ownership\Contracts\OwnershipModelGuard;
 use Nvl\Support\Ownership\Contracts\OwnershipModelPersistence as PersistenceContract;
 use Nvl\Support\Ownership\Contracts\OwnershipQueueContext as QueueContextContract;
 use Nvl\Support\Ownership\Contracts\OwnershipReadiness as ContractsOwnershipReadiness;
+use Nvl\Support\Ownership\Contracts\OwnershipSystemRunner;
 use Nvl\Support\Ownership\Contracts\OwnershipWriter as PackageWriterContract;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\DisabledOwnershipBatchOptions;
@@ -73,6 +74,7 @@ use Nvl\Support\Ownership\Services\LegacyOwnershipWriter;
 use Nvl\Support\Ownership\Services\OwnershipBatchRepository as CoreBatchRepository;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\UnavailableOwnershipReadiness;
+use Nvl\Support\Ownership\Services\UnavailableOwnershipSystemRunner;
 use Nvl\Support\Providers\SupportServiceProvider;
 use Nvl\Support\Tenancy\Contracts\TenantRunner;
 use Nvl\Support\Traits\MergesPackageConfiguration;
@@ -119,6 +121,7 @@ final class OwnershipServiceProvider extends ServiceProvider
         $this->app->extend(QueueContextContract::class, static fn (QueueContextContract $context, Application $app): QueueContextContract => $context instanceof DisabledOwnershipQueueContext ? $app->make(OwnershipQueueContext::class) : $context);
 
         $this->app->bindIf(RunnerContract::class, OwnershipRunner::class);
+        $this->app->extend(OwnershipSystemRunner::class, static fn ($runner, Application $app) => $runner instanceof UnavailableOwnershipSystemRunner ? $app->make(RunnerContract::class) : $runner);
         $this->app->extend(BoundaryContract::class, static fn (BoundaryContract $boundary, Application $app): BoundaryContract => $boundary instanceof LegacyOwnershipBoundary ? $app->make(OwnershipBoundary::class) : $boundary);
         $this->app->extend(TenantRunner::class, static fn (TenantRunner $runner, Application $app): TenantRunner => $app->make(Repository::class)->get('nvl-ownership.enabled') === true
             ? $app->make(UnmappedTenantRunner::class) : $runner);

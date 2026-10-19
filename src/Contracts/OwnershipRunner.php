@@ -7,6 +7,7 @@ namespace Nvl\Ownership\Contracts;
 use Closure;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
+use Nvl\Support\Ownership\Contracts\OwnershipSystemRunner;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
 /**
@@ -14,7 +15,7 @@ use Nvl\Support\Ownership\ValueObjects\OwnerReference;
  *
  * @api
  */
-interface OwnershipRunner
+interface OwnershipRunner extends OwnershipSystemRunner
 {
     /**
      * Admit an actor to a canonical owner and restore the previous context.
