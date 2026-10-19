@@ -212,7 +212,7 @@ final readonly class OwnershipDatabaseConstraints
                 default => null,
             };
             if ($present === null) {
-                throw new OwnershipSchemaNotReady('An actual ownership immutability constraint is missing.');
+                throw new OwnershipSchemaNotReady('An actual ownership immutability constraint is missing for ['.$table.'] ['.$event.':'.$purpose.'].');
             }
         }
     }

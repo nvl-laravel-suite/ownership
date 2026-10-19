@@ -286,3 +286,32 @@ it('runs the CLI transition from a read-only reviewed plan and retains fresh hos
         unlink($path);
     }
 });
+
+it('rejects empty unscoped resources before planning or preparing any adoption state', function (string $phase): void {
+    $resources = new OwnershipResourceRegistry;
+    $resources->register(new OwnershipResourceDefinition('fixture.records', 'fixture', Record::class, OwnershipDefinition::column(Company::class, 'company_id')));
+    $resources->register(new OwnershipResourceDefinition('remote.records', 'remote', RemoteRecord::class, OwnershipDefinition::unscoped()));
+    $this->app->instance(OwnershipResourceRegistry::class, $resources);
+    DB::connection('ownership_remote')->table('ownership_test_records')->delete();
+    $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+    {
+        public function authorize(OwnershipOperation $operation): void {}
+    });
+    $path = tempnam(sys_get_temp_dir(), 'unscoped-adoption-');
+    if ($path === false) {
+        throw new RuntimeException('Unable to allocate test input.');
+    }
+    try {
+        file_put_contents($path, json_encode(['packages' => ['fixture', 'remote'], 'mappings' => []], JSON_THROW_ON_ERROR));
+        $operation = $phase === 'plan'
+            ? fn () => Artisan::call('nvl:ownership:plan', ['--input' => $path])
+            : fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], [], $this->operation);
+        expect($operation)->toThrow(OwnershipConfigurationInvalid::class, 'Unscoped resources cannot be adopted');
+        expect(DB::table('nvl_ownership_adoption_runs')->count())->toBe(0)
+            ->and(DB::table('nvl_ownership_resource_markers')->count())->toBe(0)
+            ->and(DB::connection('ownership_remote')->table('nvl_ownership_resource_markers')->count())->toBe(0)
+            ->and(DB::connection('ownership_remote')->getSchemaBuilder()->hasColumn('ownership_test_records', 'owner_scope_key'))->toBeFalse();
+    } finally {
+        unlink($path);
+    }
+})->with(['plan', 'prepare']);

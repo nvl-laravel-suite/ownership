@@ -80,6 +80,9 @@ final readonly class OwnershipAdoptionGraph
             sort($owned);
             $sources = [];
             foreach ($owned as $key) {
+                if ($this->resources->get($key)->ownership->strategy === 'unscoped') {
+                    throw new OwnershipConfigurationInvalid('Unscoped resources cannot be adopted; configure native primary ownership before selecting ['.$key.'].');
+                }
                 $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($key) : new ($this->resources->get($key)->model);
                 if ($source->getConnection() !== (new ($this->resources->get($key)->model))->getConnection()) {
                     throw new OwnershipConfigurationInvalid('Historical adoption must preserve its canonical actual source connection.');
