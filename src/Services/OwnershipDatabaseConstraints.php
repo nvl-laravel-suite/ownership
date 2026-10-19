@@ -62,7 +62,7 @@ final readonly class OwnershipDatabaseConstraints
      * @param  list<string>  $afterStatuses
      * @param  list<string>  $eraseStatuses
      */
-    public function freeze(Connection $connection, string $table, array $fields, string $statusColumn = 'status', array $afterStatuses = [], array $eraseStatuses = []): void
+    public function freeze(Connection $connection, string $table, array $fields, string $statusColumn = 'status', array $afterStatuses = [], array $eraseStatuses = [], bool $retainStatuses = false): void
     {
         $grammar = $connection->getQueryGrammar();
         $changes = [];
@@ -81,9 +81,12 @@ final readonly class OwnershipDatabaseConstraints
         $condition = implode(' OR ', $changes);
         if ($afterStatuses !== []) {
             $statuses = implode(',', array_map(fn (string $v): string => $connection->getPdo()->quote($v), $afterStatuses));
+            if ($retainStatuses) {
+                $condition .= ' OR NEW.'.$grammar->wrap($statusColumn).' NOT IN ('.$statuses.')';
+            }
             $condition = 'OLD.'.$grammar->wrap($statusColumn).' IN ('.$statuses.') AND ('.$condition.')';
         }
-        $this->trigger($connection, $table, 'update', 'freeze:'.hash('sha256', json_encode([$fields, $statusColumn, $afterStatuses, $eraseStatuses], JSON_THROW_ON_ERROR)), $condition);
+        $this->trigger($connection, $table, 'update', 'freeze:'.hash('sha256', json_encode([$fields, $statusColumn, $afterStatuses, $eraseStatuses, $retainStatuses], JSON_THROW_ON_ERROR)), $condition);
     }
 
     /** Enforce an additional concrete reference in the same native owner partition.
@@ -107,7 +110,7 @@ final readonly class OwnershipDatabaseConstraints
     public function assertReference(Connection $connection, string $table, string $foreignKey, string $parentTable, string $parentKey): void
     {
         foreach (['insert', 'update'] as $event) {
-            $name = $this->name($table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey));
+            $name = $this->name($connection, $table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey));
             $present = match ($connection->getDriverName()) {
                 'sqlite' => $connection->selectOne("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?", [$name], false),
                 'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $connection->getTablePrefix().$table], false),
@@ -168,7 +171,7 @@ final readonly class OwnershipDatabaseConstraints
     public function assertProtected(Connection $connection, string $table, bool $pivot = false): void
     {
         foreach (['insert' => 'valid', 'update' => 'immutable', ...($pivot ? ['delete' => 'primary'] : [])] as $event => $purpose) {
-            $name = $this->name($table, $event, $purpose);
+            $name = $this->name($connection, $table, $event, $purpose);
             $present = match ($connection->getDriverName()) {
                 'sqlite' => $connection->selectOne("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?", [$name], false),
                 'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $connection->getTablePrefix().$table], false),
@@ -185,7 +188,7 @@ final readonly class OwnershipDatabaseConstraints
     private function trigger(Connection $connection, string $table, string $event, string $purpose, string $condition): void
     {
         $grammar = $connection->getQueryGrammar();
-        $name = $grammar->wrap($this->name($table, $event, $purpose));
+        $name = $grammar->wrap($this->name($connection, $table, $event, $purpose));
         $target = $grammar->wrapTable($table);
         $event = strtoupper($event);
         $message = 'NVL ownership partition is invalid or immutable';
@@ -195,7 +198,7 @@ final readonly class OwnershipDatabaseConstraints
             return;
         }
         if ($connection->getDriverName() === 'pgsql') {
-            $function = $grammar->wrap($this->name($table, strtolower($event), $purpose).'_fn');
+            $function = $grammar->wrap($this->name($connection, $table, strtolower($event), $purpose).'_fn');
             $result = $event === 'DELETE' ? 'OLD' : 'NEW';
             $connection->statement('CREATE OR REPLACE FUNCTION '.$function.'() RETURNS trigger LANGUAGE plpgsql AS $nvl$ BEGIN IF '.$condition." THEN RAISE EXCEPTION '{$message}'; END IF; RETURN {$result}; END; ".'$nvl$');
             $connection->statement("DROP TRIGGER IF EXISTS {$name} ON {$target}");
@@ -208,8 +211,11 @@ final readonly class OwnershipDatabaseConstraints
     }
 
     /** Keep protocol identifiers stable and within every supported engine's length limit. */
-    private function name(string $table, string $event, string $purpose): string
+    private function name(Connection $connection, string $table, string $event, string $purpose): string
     {
-        return 'nvl_own_'.substr(hash('sha256', $table.'|'.$event.'|'.$purpose), 0, 32);
+        [$schema, $logicalTable] = $connection->getSchemaBuilder()->parseSchemaAndTable($table);
+        $physicalTable = ($schema === null ? '' : $schema.'.').$connection->getTablePrefix().$logicalTable;
+
+        return 'nvl_own_'.substr(hash('sha256', $physicalTable.'|'.$event.'|'.$purpose), 0, 32);
     }
 }
