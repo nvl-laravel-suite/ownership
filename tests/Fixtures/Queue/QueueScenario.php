@@ -79,5 +79,13 @@ final readonly class QueueScenario
         };
     }
 
+    /** @return Closure(Batch): void */
+    public static function unownedBatchCallback(): Closure
+    {
+        return static function (Batch $batch): void {
+            DB::table('ownership_queue_probes')->insert(['stage' => 'unowned-batch', 'owner' => app(OwnershipContext::class)->snapshot()->mode->value, 'label' => 'global']);
+        };
+    }
+
     private function __construct() {}
 }

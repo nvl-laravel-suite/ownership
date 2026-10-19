@@ -10,6 +10,8 @@ use Illuminate\Bus\DatabaseBatchRepository;
 use Illuminate\Bus\PendingBatch;
 use Illuminate\Container\Container;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
+use Nvl\Support\Ownership\Contracts\OwnershipQueueContext;
+use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipBatchRepository;
@@ -43,8 +45,14 @@ class OwnershipDatabaseBatchRepository extends OwnershipBatchRepository
     {
         $app = Container::getInstance();
         if ($app->make('config')->get('nvl-ownership.enabled') === true) {
-            $expected = OwnershipJobEnvelope::capture($app->make(OwnershipContext::class))->toArray();
-            if (($batch->options['nvl_ownership'] ?? null) !== $expected || ! in_array($expected['mode'], ['owner', 'central'], true)) {
+            $context = $app->make(OwnershipContext::class);
+            $wire = $batch->options['nvl_ownership'] ?? null;
+            $unowned = is_array($wire) && ($wire['version'] ?? null) === 2;
+            if ($unowned && $context->snapshot()->mode !== OwnershipContextMode::Unresolved) {
+                throw new OwnershipViolation('Explicit global batches cannot borrow owner or central authority.');
+            }
+            $expected = ($unowned ? $app->make(OwnershipQueueContext::class)->captureUnowned() : OwnershipJobEnvelope::capture($context))->toArray();
+            if (($batch->options['nvl_ownership'] ?? null) !== $expected || ! in_array($expected['mode'], ['owner', 'central', 'unresolved'], true)) {
                 throw new OwnershipViolation('Owner batches must be captured and dispatched in their producer scope.');
             }
             foreach ($batch->jobs->flatten() as $job) {

@@ -234,7 +234,12 @@ final readonly class OwnershipQueueCommand
             throw new OwnershipViolation('Owner batches require explicitly captured options.');
         }
         $envelope = OwnershipJobEnvelope::fromArray($options['nvl_ownership']);
-        $current = OwnershipJobEnvelope::capture($this->container->make(OwnershipContext::class));
+        $context = $this->container->make(OwnershipContext::class);
+        $unowned = $envelope->context()->mode === OwnershipContextMode::Unresolved;
+        if ($unowned && $context->snapshot()->mode !== OwnershipContextMode::Unresolved) {
+            throw new OwnershipViolation('Global batch callbacks cannot borrow owner or central authority.');
+        }
+        $current = $unowned ? $this->container->make(OwnershipQueueContext::class)->captureUnowned() : OwnershipJobEnvelope::capture($context);
         if ($envelope->context()->mode === OwnershipContextMode::Disabled
             || $current->toArray() !== $options['nvl_ownership']) {
             throw new OwnershipViolation('Persisted batch callbacks belong to a different owner scope.');

@@ -109,6 +109,25 @@ final readonly class OwnershipRunner implements RunnerContract
     }
 
     /**
+     * Run explicitly global transport without granting access to any protected resource.
+     *
+     * @internal
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     */
+    public function unowned(Closure $callback): mixed
+    {
+        $this->container->make(OwnershipConfiguration::class)->assertReady();
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+
+        return $this->within(new OwnershipSnapshot(OwnershipContextMode::Unresolved,
+            generations: $this->container->make(OwnershipInstallationState::class)->generations()), $callback);
+    }
+
+    /**
      * Install public admission after the boundary resolver verifies canonical owner and origin.
      *
      * @internal

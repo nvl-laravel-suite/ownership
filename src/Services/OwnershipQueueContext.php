@@ -25,13 +25,31 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
     /** Retain only the current application, never a captured request adapter. */
     public function __construct(private Container $container) {}
 
+    /** Capture explicit global execution without deriving any owner or central authority. */
+    public function captureUnowned(): OwnershipJobEnvelope
+    {
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+        $this->container->make(OwnershipConfiguration::class)->assertReady();
+        if ($this->container->make(OwnershipContext::class)->snapshot()->publicSite !== null) {
+            throw new OwnershipViolation('Public site admission cannot schedule privileged or global package work.');
+        }
+
+        return OwnershipJobEnvelope::unowned($this->container->make(OwnershipInstallationState::class)->generations());
+    }
+
     /** Validate every job before persisting native batch callbacks. */
     public function captureBatch(PendingBatch $batch): PendingBatch
     {
         if (! $this->container->make(BatchRepository::class) instanceof OwnershipDatabaseBatchRepository) {
             throw new OwnershipViolation('Owned batches require a guarded native database repository.');
         }
-        $envelope = OwnershipJobEnvelope::capture($this->container->make(OwnershipContext::class));
+        $first = $batch->jobs->flatten()->first();
+        $firstEnvelope = is_object($first) ? $this->container->make(OwnershipQueueCarrier::class)->envelope($first) : null;
+        $unowned = $firstEnvelope?->context()->mode === OwnershipContextMode::Unresolved;
+        if ($unowned && $this->container->make(OwnershipContext::class)->snapshot()->mode !== OwnershipContextMode::Unresolved) {
+            throw new OwnershipViolation('Explicit global batches must be scheduled without owner or central authority.');
+        }
+        $envelope = $unowned ? $this->captureUnowned() : OwnershipJobEnvelope::capture($this->container->make(OwnershipContext::class));
         $this->run($envelope, static fn (): null => null);
         foreach ($batch->jobs->flatten() as $job) {
             if (! is_object($job) || $this->container->make(OwnershipQueueCarrier::class)->envelope($job)->toArray() !== $envelope->toArray()) {
@@ -72,8 +90,11 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
         }
         $this->container->make(OwnershipConfiguration::class)->assertReady();
         $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
-        $principal = $snapshot->principal ?? throw new OwnershipViolation;
         $runner = $this->container->make(OwnershipRunner::class);
+        if ($snapshot->mode === OwnershipContextMode::Unresolved) {
+            return $runner->unowned($operation);
+        }
+        $principal = $snapshot->principal ?? throw new OwnershipViolation;
         if ($principal['kind'] === 'system') {
             return $runner->runSystem($snapshot->owner ?? throw new OwnershipViolation, $snapshot->operation ?? throw new OwnershipViolation, $operation);
         }
