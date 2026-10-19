@@ -13,6 +13,9 @@ use Nvl\Ownership\ValueObjects\OwnershipOperation;
  */
 interface OwnershipAdoptionAccess
 {
-    /** Authorize maintenance independently of the supplied audit facts. */
+    /**
+     * Authorize the actual operator independently of audit facts and require drained producers,
+     * in-flight requests and queue work before cutover; CLI actor strings are never credentials.
+     */
     public function authorize(OwnershipOperation $operation): void;
 }

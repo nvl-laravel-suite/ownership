@@ -6,8 +6,8 @@ description: Use when integrating or reviewing nvl/ownership, native owner colum
 # NVL Ownership
 
 Read the installed Ownership README and UPGRADING guide for exact API and rollout
-steps. This candidate integrates Core, Settings, Activity, Translatable and Media;
-other package conversions remain separate work. NVL Auth/Tenancy are optional.
+steps. This candidate integrates the stateful NVL graph, including Auth, Media, Pages,
+Forms, Tasks, Mail, financial workflows and native translation overrides. NVL Auth/Tenancy are optional.
 
 ## Consumer model
 
@@ -64,3 +64,11 @@ constructor. Retain full producer principal, owner and generation; never infer a
 worker owner. Enabled runtime requires the transaction-committing capability.
 Verify with `nvl:ownership:doctor`, negative isolation tests and actual backend/
 worker tests; installation and provider registration do not prove readiness.
+
+
+Use the reviewed `nvl:ownership:plan`, `prepare`, `backfill`, `verify`, `activate`
+commands from the installed README. Plan and verify are read-only; preserve the
+plan UUID. Audit actor strings never grant authority. Bind fresh host adoption
+access only after authenticating the actual operator and checking producer/request/
+queue drain. Release infrastructure certification remains separate from unit and
+feature evidence. Never invent readiness or conservation markers.

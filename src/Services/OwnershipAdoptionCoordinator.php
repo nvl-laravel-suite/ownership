@@ -14,6 +14,7 @@ use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
+use Nvl\Ownership\ValueObjects\OwnershipMigrationReview;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Ownership\ValueObjects\OwnershipVerification;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
@@ -46,6 +47,7 @@ final readonly class OwnershipAdoptionCoordinator
         private OwnershipOperationRecorder $audit,
         private OwnershipAdoptionScope $scope,
         private OwnershipAdoptionConservation $conservation,
+        private OwnershipMigrationInput $migrationInput,
     ) {}
 
     /**
@@ -54,13 +56,19 @@ final readonly class OwnershipAdoptionCoordinator
      * @param  list<string>  $packages
      * @param  iterable<OwnershipMapping>  $mappings
      */
-    public function prepare(array $packages, iterable $mappings, OwnershipOperation $operation): OwnershipAdoptionPlan
+    public function prepare(array $packages, iterable $mappings, OwnershipOperation $operation, ?OwnershipMigrationReview $review = null): OwnershipAdoptionPlan
     {
-        return $this->mutate($operation, function () use ($packages, $mappings): OwnershipAdoptionPlan {
+        return $this->mutate($operation, function () use ($packages, $mappings, $review): OwnershipAdoptionPlan {
             $graph = $this->graphs->resolve($packages);
             $connection = $this->connections->core();
+            if ($review !== null) {
+                $this->migrationInput->assertCurrent($review, $graph);
+                if ($connection->table(Tables::Runs)->where('id', $review->id)->exists()) {
+                    throw new OwnershipConfigurationInvalid('This plan is already persisted. Resume it with backfill, verify or activate; do not prepare it again.');
+                }
+            }
             $this->assertNoInterruptedRun($graph);
-            $id = (string) Str::uuid();
+            $id = $review === null ? (string) Str::uuid() : $review->id;
             $configurationHash = $this->ownership->hash($graph['resources']);
             $fingerprints = [];
             foreach ($graph['resources'] as $resource) {

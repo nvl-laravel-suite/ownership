@@ -50,6 +50,15 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Contracts\\OwnershipActorResolver": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipActorResolver.php",
+            "methods": [
+                "resolve"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\Contracts\\OwnershipAdoptionAccess": {
             "kind": "interface",
             "file": "src/Contracts/OwnershipAdoptionAccess.php",
@@ -77,6 +86,15 @@
             "file": "src/Contracts/OwnershipAdoptionMetadataValidator.php",
             "methods": [
                 "validateAssignment"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Contracts\\OwnershipAdoptionSource": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnershipAdoptionSource.php",
+            "methods": [
+                "sourceFor"
             ],
             "properties": [],
             "constants": []
@@ -197,6 +215,23 @@
             ],
             "constants": []
         },
+        "Nvl\\Ownership\\ValueObjects\\OwnershipMigrationReview": {
+            "kind": "class",
+            "file": "src/ValueObjects/OwnershipMigrationReview.php",
+            "methods": [
+                "__construct",
+                "toArray"
+            ],
+            "properties": [
+                "configurationHash",
+                "graphHash",
+                "id",
+                "mappings",
+                "packages",
+                "sources"
+            ],
+            "constants": []
+        },
         "Nvl\\Ownership\\ValueObjects\\OwnershipOperation": {
             "kind": "class",
             "file": "src/ValueObjects/OwnershipOperation.php",
@@ -218,7 +253,8 @@
                 "passed"
             ],
             "properties": [
-                "errors"
+                "errors",
+                "resources"
             ],
             "constants": []
         }

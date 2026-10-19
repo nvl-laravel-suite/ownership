@@ -1,8 +1,7 @@
 # Upgrading to ownership
 
-This unreleased candidate covers Core, Settings, Activity, Translatable and Media.
-Do not replace the legacy authority for packages whose ownership integration has
-not been completed. Keep production disabled until the exact deployment graph and
+This unreleased candidate includes native integrations across the NVL stateful
+package graph. Tenancy is an explicit temporary bridge for existing installations. Keep production disabled until the exact deployment graph and
 backend have been rehearsed.
 
 1. Deploy the Core 5.1 bridge and converted packages before cutover. Core remains
@@ -38,3 +37,20 @@ coordinated pre-adoption backup with the compatible bridge binaries, or use a
 separately reviewed retirement/transfer procedure. Protocol migration `down()` is
 intentionally prohibited. Never delete markers, drop guards or rename protocol
 tables to regain access.
+
+
+The migration command sequence and mapping JSON are documented in README.md.
+Keep the reviewed UUID through all phases. Preparing an existing UUID is rejected;
+resume interrupted preparation through its bounded backfill command. The source
+inventory, actual store IDs, configured models and fingerprints are compared again
+under the coordinator leases before preparation. Historical Auth pending proofs
+must drain or expire; they are never promoted into a new native authentication
+proof. Billing and Payments retain existing provider correlation and idempotency
+keys. Original translation overrides remain in their old table while exact native
+copies preserve their IDs and revisions.
+
+The ownership replacement targets the next reviewed major release. The explicit
+Tenancy bridge and deprecated tenant-specific entry points have a full migration
+window; removal is no earlier than major 7, after separately reviewed retention
+and retirement migrations. Current source constraints are development candidates,
+not a claim that this major transition has been published or certified.

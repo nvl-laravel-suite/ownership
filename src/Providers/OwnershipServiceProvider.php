@@ -21,7 +21,12 @@ use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\ServiceProvider;
 use Nvl\Ownership\Compatibility\UnmappedTenantRunner;
+use Nvl\Ownership\Console\Commands\ActivateOwnershipMigrationCommand;
+use Nvl\Ownership\Console\Commands\BackfillOwnershipMigrationCommand;
 use Nvl\Ownership\Console\Commands\OwnershipDoctorCommand;
+use Nvl\Ownership\Console\Commands\PlanOwnershipMigrationCommand;
+use Nvl\Ownership\Console\Commands\PrepareOwnershipMigrationCommand;
+use Nvl\Ownership\Console\Commands\VerifyOwnershipMigrationCommand;
 use Nvl\Ownership\Contracts\CentralAccess;
 use Nvl\Ownership\Contracts\OwnerAccess;
 use Nvl\Ownership\Contracts\OwnerAvailability;
@@ -153,7 +158,7 @@ final class OwnershipServiceProvider extends ServiceProvider
             OwnershipWriteLease::register($connection);
         }
         if ($this->app->runningInConsole()) {
-            $this->commands([OwnershipDoctorCommand::class]);
+            $this->commands([OwnershipDoctorCommand::class, PlanOwnershipMigrationCommand::class, PrepareOwnershipMigrationCommand::class, BackfillOwnershipMigrationCommand::class, VerifyOwnershipMigrationCommand::class, ActivateOwnershipMigrationCommand::class]);
         }
         PackageDoctorContributor::register($this->app, 'nvl/ownership', fn (): array => $this->app->make(OwnershipDoctor::class)->inspect());
         $this->publishes([__DIR__.'/../../resources/boost/skills' => base_path('.agents/skills')], 'nvl-ownership-skills');

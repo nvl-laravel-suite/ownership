@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Illuminate\Contracts\Foundation\MaintenanceMode;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
@@ -247,4 +248,41 @@ it('rejects canonical owner drift even when an adapter reports a healthy graph',
     DB::table('ownership_test_records')->update(['company_id' => 8, 'owner_scope_key' => app(OwnerIdentityResolver::class)->reference(Company::findOrFail(8))->scopeKey()]);
     DB::connection('ownership_remote')->table('ownership_test_records')->update(['owner_scope_key' => $this->owner->scopeKey()]);
     expect($coordinator->verify($plan)->passed())->toBeFalse();
+});
+
+it('runs the CLI transition from a read-only reviewed plan and retains fresh host authorization', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'nvl-ownership-cli-');
+    if ($path === false) {
+        throw new RuntimeException('Unable to allocate test input.');
+    }
+    try {
+        $input = ['packages' => ['fixture', 'remote'], 'mappings' => array_map(fn (OwnershipMapping $mapping): array => ['resource' => $mapping->resource, 'record_id' => $mapping->recordId, 'owner' => $mapping->owner?->toArray()], $this->mappings)];
+        file_put_contents($path, json_encode($input, JSON_THROW_ON_ERROR));
+        expect(Artisan::call('nvl:ownership:plan', ['--input' => $path]))->toBe(0);
+        $review = json_decode(Artisan::output(), true, 32, JSON_THROW_ON_ERROR);
+        expect($review['sources']['fixture.records']['rows'])->toBe(1)
+            ->and(DB::table('nvl_ownership_adoption_runs')->count())->toBe(0)
+            ->and(DB::table('nvl_ownership_resource_markers')->count())->toBe(0);
+        ksort($review['sources']['fixture.records']);
+        file_put_contents($path, json_encode($review, JSON_THROW_ON_ERROR));
+        $arguments = ['--plan' => $review['id'], '--input' => $path, '--actor-type' => 'operator', '--actor-id' => 'reviewed-cli'];
+        expect(fn () => Artisan::call('nvl:ownership:prepare', $arguments))->toThrow(OwnershipViolation::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->count())->toBe(0);
+        $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+        {
+            public function authorize(OwnershipOperation $operation): void {}
+        });
+        expect(Artisan::call('nvl:ownership:prepare', $arguments))->toBe(0);
+        $phase = ['--plan' => $review['id'], '--actor-type' => 'operator', '--actor-id' => 'reviewed-cli'];
+        expect(fn () => Artisan::call('nvl:ownership:prepare', $arguments))->toThrow(OwnershipConfigurationInvalid::class);
+        expect(Artisan::call('nvl:ownership:backfill', $phase + ['--limit' => '10']))->toBe(0);
+        $checkpointCount = DB::table('nvl_ownership_adoption_checkpoints')->count();
+        expect(Artisan::call('nvl:ownership:verify', ['--plan' => $review['id']]))->toBe(0)
+            ->and(DB::table('nvl_ownership_adoption_checkpoints')->count())->toBe($checkpointCount);
+        expect(Artisan::call('nvl:ownership:activate', $phase))->toBe(0)
+            ->and(DB::table('nvl_ownership_adoption_runs')->where('id', $review['id'])->value('status'))->toBe('active')
+            ->and(DB::table('ownership_test_records')->where('id', 1)->value('company_id'))->toBeIn([7, '7']);
+    } finally {
+        unlink($path);
+    }
 });

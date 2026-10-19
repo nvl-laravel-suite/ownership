@@ -11,10 +11,11 @@ reads, immutable assignment, source transaction fences, scalar queue capture, an
 reviewed adoption. It installs no Company, User, Tenant, membership or role models.
 Host authorization remains required inside an admitted owner.
 
-This is an unreleased implementation candidate through Settings, Activity,
-Translatable, Media, Comments, Metafields, Taxonomy, Content, Templates, Pages, SEO
-and Forms. Other NVL integrations remain on the legacy authority and
-cannot be silently enrolled. No production activation follows from installing it.
+This unreleased implementation now covers the stateful NVL package graph, including
+Auth, Tasks, CSV, Mail, Billing, Payments and Translations. Install only the domain
+packages you need. Tenancy remains an explicitly selected migration bridge;
+ordinary unowned applications need neither enforcement runtime. Production release
+certification and deployment-specific cutover rehearsal remain pending.
 
 ## Quick reference
 
@@ -317,3 +318,41 @@ retain the canonical source guard. Configured subclasses cannot replace those
 persistence seams. Query builders still belong behind documented package Actions
 and capabilities; ownership is not a replacement for host authorization or native
 SQL permissions.
+
+
+## Reviewed migration commands
+
+Create a JSON input with `packages` and `mappings`. Each mapping has `resource`,
+`record_id`, an explicit full `owner` reference (or an explicitly supported central
+`null`), optional `legacy_tenant_id`, and adapter-specific `metadata`.
+No owner is inferred from a tenant list, first user, environment or CLI actor.
+Install protocol migrations on every participating source before planning.
+
+```sh
+php artisan nvl:ownership:plan --input=mappings.json > reviewed-plan.json
+php artisan nvl:ownership:prepare --plan=REVIEWED_UUID --input=reviewed-plan.json --actor-type=operator --actor-id=DEPLOYMENT_ACTOR
+php artisan nvl:ownership:backfill --plan=REVIEWED_UUID --limit=500 --actor-type=operator --actor-id=DEPLOYMENT_ACTOR
+php artisan nvl:ownership:verify --plan=REVIEWED_UUID
+php artisan nvl:ownership:activate --plan=REVIEWED_UUID --actor-type=operator --actor-id=DEPLOYMENT_ACTOR
+```
+
+`plan` and `verify` do not change schema, rows, checkpoints or activation state.
+Review and preserve the generated document; replace the placeholders with its UUID
+and your authenticated deployment actor's audit identity. Inputs are bounded JSON
+files (sixteen MiB), never executable PHP. Repeat `backfill` until its JSON reports
+`done: true`. An interrupted prepare resumes through `backfill`, using the same
+persisted assignments. A UUID cannot be prepared a second time with new mappings.
+
+Every mutation still requires real maintenance and fresh `OwnershipAdoptionAccess`.
+The host adapter must authenticate the actual operator independently of these CLI
+strings and verify stopped producers, drained requests/queues and stopped workers
+before cutover. The default denies. The operation purposes are
+`ownership.prepare`, `ownership.backfill`, and `ownership.activate`. Verification
+alone grants no permission to activate. Activation rechecks the graph, current
+owners, mappings and physical constraints under the actual source leases. It never
+drops historical columns, tables, IDs, provider keys or private files.
+
+Native translation copy uses `TranslationOverrideRepository` and
+`ExportTranslationOverridesContract`, with `nvl-translations.models.override` and
+an exact `nvl-translations.ownership.keys` allowlist. The source language catalog
+remains a global editing workspace. Owner-scoped copy never rewrites source files.
