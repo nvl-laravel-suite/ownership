@@ -6,6 +6,7 @@ namespace Nvl\Ownership\Services;
 
 use Illuminate\Container\Container;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
+use Nvl\Ownership\Contracts\OwnershipAdoptionSource;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
@@ -77,7 +78,12 @@ final readonly class OwnershipAdoptionGraph
         foreach ($ordered as $package => $adapter) {
             $owned = $adapter->resources();
             sort($owned);
-            $manifest[$package] = [$registered[$package], $adapter::class, $owned];
+            $sources = [];
+            foreach ($owned as $key) {
+                $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($key) : new ($this->resources->get($key)->model);
+                $sources[$key] = [$source::class, $source->getTable(), $source->getKeyName(), $source->getKeyType(), $source->getConnection()->getName(), $source->getConnection()->getTablePrefix()];
+            }
+            $manifest[$package] = [$registered[$package], $adapter::class, $owned, $sources];
             array_push($keys, ...$owned);
         }
         sort($keys);

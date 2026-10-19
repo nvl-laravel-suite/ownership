@@ -8,6 +8,7 @@ use Illuminate\Container\Container;
 use Illuminate\Support\Str;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Contracts\OwnershipAdoptionMetadataValidator;
+use Nvl\Ownership\Contracts\OwnershipAdoptionSource;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Support\OwnerRegistry;
@@ -190,7 +191,8 @@ final readonly class OwnershipAdoptionStore
             $native = $this->container->make(OwnerIdentityResolver::class)->resolve($assignment->owner);
             $this->container->make(OwnerAvailability::class)->assertAvailable($native);
         }
-        $source = new $definition->model;
+        $adapter = $graph['adapters'][$owner];
+        $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($assignment->resource) : new $definition->model;
         $persistedKey = $source->getConnection()->table($source->getTable())->useWritePdo()->where($source->getKeyName(), $assignment->recordId)->value($source->getKeyName());
         if ((! is_int($persistedKey) && ! is_string($persistedKey)) || (string) $persistedKey !== $assignment->recordId) {
             throw new OwnershipConfigurationInvalid('A mapping must name the exact existing physical source record.');
