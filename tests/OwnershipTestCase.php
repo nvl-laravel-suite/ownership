@@ -50,7 +50,7 @@ abstract class OwnershipTestCase extends TestCase
                     throw new \RuntimeException('Persistence tests require explicitly dedicated nvl_own_test_ databases.');
                 }
             }
-            $connection = ['driver' => 'pgsql', 'host' => '/tmp', 'port' => '5432', 'database' => $primary, 'username' => get_current_user(), 'password' => '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer'];
+            $connection = ['driver' => 'pgsql', 'host' => '/tmp', 'port' => '5432', 'database' => $primary, 'username' => get_current_user(), 'password' => '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
             $app['config']->set('database.connections.sqlite', $connection);
             $app['config']->set('database.connections.ownership_remote', [...$connection, 'database' => $remote]);
         }
