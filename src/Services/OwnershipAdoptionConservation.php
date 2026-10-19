@@ -1,0 +1,68 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Nvl\Ownership\Services;
+
+use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
+use Nvl\Ownership\Contracts\OwnershipAdoptionSource;
+use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
+use Nvl\Ownership\ValueObjects\OwnershipVerification;
+use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
+use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
+use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+
+/** Independently compares every physical cutover record with its reviewed canonical owner. @internal */
+final readonly class OwnershipAdoptionConservation
+{
+    /** Retain immutable reviewed mappings and exact canonical source readers. */
+    public function __construct(private OwnershipAdoptionStore $mappings, private OwnershipResourceRegistry $resources, private OwnershipRecordReader $records, private OwnershipCanonicalResolver $canonical, private OwnershipConnections $connections) {}
+
+    /** Compare all rows, including historical and soft-deleted records, in both directions. */
+    public function verify(OwnershipAdoptionPlan $plan, OwnershipAdoptionAdapter $adapter): OwnershipVerification
+    {
+        $errors = [];
+        $reports = [];
+        foreach ($adapter->resources() as $key) {
+            $definition = $this->resources->get($key);
+            $model = new $definition->model;
+            $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($key) : $model;
+            $connection = $model->getConnection();
+            $mapped = $this->mappings->countForResource($plan, $key);
+            $persisted = 0;
+            $owners = [];
+            foreach ($connection->table($model->getTable())->useWritePdo()->orderBy($model->getKeyName())->cursor() as $row) {
+                $persisted++;
+                $id = $row->{$model->getKeyName()};
+                if (! is_int($id) && ! is_string($id)) {
+                    $errors[$key.':invalid_record_key'] = true;
+
+                    continue;
+                }
+                try {
+                    $mapping = $this->mappings->forRecord($plan, $key, (string) $id);
+                    $reference = $this->canonical->fromPersisted($this->records->hydrate($model, $row), $definition);
+                    $scope = $reference?->scopeKey() ?? 'central';
+                    $owners[$scope] = ($owners[$scope] ?? 0) + 1;
+                    if ($reference != $mapping->owner) {
+                        $errors[$key.':reviewed_owner_mismatch'] = true;
+                    }
+                    if (isset($row->tenant_id) && $row->tenant_id !== $mapping->legacyTenantId) {
+                        $errors[$key.':legacy_identity_mismatch'] = true;
+                    }
+                } catch (OwnershipConfigurationInvalid|OwnershipSchemaNotReady|OwnershipViolation $exception) {
+                    $errors[$key.':invalid_or_unmapped_record'] = true;
+                }
+            }
+            $sourceCount = $source->getConnection()->table($source->getTable())->useWritePdo()->count();
+            if ($mapped !== $persisted || $sourceCount !== $persisted) {
+                $errors[$key.':record_conservation_mismatch'] = true;
+            }
+            ksort($owners, SORT_STRING);
+            $reports[$key] = ['source_store' => $this->connections->identity($connection), 'source_table' => $source->getTable(), 'target_table' => $model->getTable(), 'source' => $sourceCount, 'persisted' => $persisted, 'mapped' => $mapped, 'owners' => $owners];
+        }
+
+        return new OwnershipVerification(array_keys($errors), $reports);
+    }
+}

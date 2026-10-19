@@ -128,6 +128,12 @@ final readonly class OwnershipAdoptionStore
         });
     }
 
+    /** Count reviewed physical identities without restoring any package model. */
+    public function countForResource(OwnershipAdoptionPlan $plan, string $resource): int
+    {
+        return $this->connections->core()->table(Tables::Mappings)->where('run_id', $plan->id)->where('resource', $resource)->count();
+    }
+
     /** Resolve one exact reviewed mapping only inside a fenced package phase. */
     public function forRecord(OwnershipAdoptionPlan $plan, string $resource, string $recordId): OwnershipMapping
     {

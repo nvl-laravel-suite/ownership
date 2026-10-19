@@ -9,7 +9,7 @@ use Symfony\Component\Process\Process;
 
 it('serializes real competing processes across source DDL and releases the native lock', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'nvl-ownership-lock-');
-    $configuration = getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql'
+    $configuration = in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)
         ? config('database.connections.sqlite')
         : ['driver' => 'sqlite', 'database' => $path, 'prefix' => '', 'foreign_key_constraints' => true];
     config(['database.connections.ownership_lock' => $configuration]);

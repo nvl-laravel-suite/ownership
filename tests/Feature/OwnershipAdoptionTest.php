@@ -20,8 +20,10 @@ use Nvl\Ownership\Tests\Fixtures\Adoption\RecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Adoption\RemoteRecord;
 use Nvl\Ownership\Tests\Fixtures\Adoption\RemoteRecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
+use Nvl\Ownership\ValueObjects\OwnershipVerification;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
@@ -37,7 +39,7 @@ use Nvl\Support\Tenancy\ValueObjects\TenantId;
 use Nvl\Support\Tenancy\ValueObjects\TenantResourceDefinition;
 
 beforeEach(function (): void {
-    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
+    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
         config(['database.connections.ownership_remote' => config('database.connections.sqlite')]);
     }
     foreach (['sqlite', 'ownership_remote'] as $connection) {
@@ -51,7 +53,7 @@ beforeEach(function (): void {
     }
     config(['nvl-ownership.connection' => 'sqlite']);
     app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('fixture.records', 'fixture', Record::class, OwnershipDefinition::column(Company::class, 'company_id')));
-    app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('remote.records', 'remote', RemoteRecord::class, OwnershipDefinition::column(Company::class, 'company_id')));
+    app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('remote.records', 'remote', RemoteRecord::class, OwnershipDefinition::captured()));
     app(OwnershipAdoptionRegistry::class)->register('fixture', RecordsAdapter::class);
     app(OwnershipAdoptionRegistry::class)->register('remote', RemoteRecordsAdapter::class);
     $this->operation = new OwnershipOperation('adopt-reviewed-records', 'operator', '1');
@@ -219,4 +221,30 @@ it('fences legacy package entry during adoption even after a negative storage pr
         expect(fn () => $legacy->key('fixture.records', 'escaped'))->toThrow(OwnershipViolation::class);
     }]);
     app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
+});
+
+it('rejects canonical owner drift even when an adapter reports a healthy graph', function (): void {
+    $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+    {
+        public function authorize(OwnershipOperation $operation): void {}
+    });
+    $this->app->bind(RecordsAdapter::class, static fn () => new class extends RecordsAdapter
+    {
+        public function verify(OwnershipAdoptionPlan $plan): OwnershipVerification
+        {
+            return new OwnershipVerification([]);
+        }
+    });
+    $coordinator = app(OwnershipAdoptionCoordinator::class);
+    $plan = $coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
+    $coordinator->backfill($plan, 100, $this->operation);
+    $verified = $coordinator->verify($plan);
+    expect($verified->passed())->toBeTrue()
+        ->and($verified->resources['fixture.records']['mapped'])->toBe(1)
+        ->and($verified->resources['fixture.records']['persisted'])->toBe(1)
+        ->and($verified->resources['fixture.records']['owners'])->toBe([$this->owner->scopeKey() => 1])
+        ->and($verified->resources['remote.records']['source_store'])->not->toBe($verified->resources['fixture.records']['source_store']);
+    DB::table('ownership_test_records')->update(['company_id' => 8, 'owner_scope_key' => app(OwnerIdentityResolver::class)->reference(Company::findOrFail(8))->scopeKey()]);
+    DB::connection('ownership_remote')->table('ownership_test_records')->update(['owner_scope_key' => $this->owner->scopeKey()]);
+    expect($coordinator->verify($plan)->passed())->toBeFalse();
 });

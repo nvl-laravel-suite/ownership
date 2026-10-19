@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Tests\Fixtures\Adoption;
 
+use Illuminate\Database\Schema\Blueprint;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
 use Nvl\Ownership\Services\OwnershipAdoptionStore;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
@@ -31,6 +32,13 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         if (! $model->getConnection()->getSchemaBuilder()->hasColumn('ownership_test_records', 'company_id')) {
             throw new RuntimeException('Missing source schema.');
         }
+        $schema = $model->getConnection()->getSchemaBuilder();
+        if (! $schema->hasColumn($model->getTable(), 'owner_scope_key')) {
+            $schema->table($model->getTable(), static function (Blueprint $table): void {
+                $table->string('owner_scope_key', 191)->nullable();
+                $table->json('owner_reference')->nullable();
+            });
+        }
     }
 
     /** Backfill one stable source batch using the frozen reviewed mapping. */
@@ -41,7 +49,7 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         $rows = $model->newQuery()->when($cursor !== null, fn ($query) => $query->where('id', '>', $cursor))->orderBy('id')->limit($limit)->get();
         foreach ($rows as $row) {
             $assignment = app(OwnershipAdoptionStore::class)->forRecord($plan, $key, $row->nativeId());
-            $row->forceFill(['company_id' => $assignment->requireOwner()->key])->save();
+            $row->forceFill(['company_id' => $assignment->requireOwner()->key, 'owner_scope_key' => $assignment->requireOwner()->scopeKey(), 'owner_reference' => json_encode($assignment->requireOwner()->toArray(), JSON_THROW_ON_ERROR)])->save();
         }
 
         $last = $rows->last();

@@ -22,8 +22,8 @@ it('resolves declared base owners through the existing configured model registry
 });
 
 it('rejects lossy owner foreign key storage before any adoption backfill', function (): void {
-    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql') {
-        $this->markTestSkipped('PostgreSQL rejects this incompatible native FK at host DDL creation.');
+    if (in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+        $this->markTestSkipped('The native engine rejects this incompatible FK at host DDL creation.');
     }
     config()->set('ownership-test.lossy-column', true);
     expect(fn () => ResourceScenario::install($this->app))->toThrow(OwnershipSchemaNotReady::class);

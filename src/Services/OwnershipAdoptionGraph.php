@@ -81,6 +81,9 @@ final readonly class OwnershipAdoptionGraph
             $sources = [];
             foreach ($owned as $key) {
                 $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($key) : new ($this->resources->get($key)->model);
+                if ($source->getConnection() !== (new ($this->resources->get($key)->model))->getConnection()) {
+                    throw new OwnershipConfigurationInvalid('Historical adoption must preserve its canonical actual source connection.');
+                }
                 $sources[$key] = [$source::class, $source->getTable(), $source->getKeyName(), $source->getKeyType(), $source->getConnection()->getName(), $source->getConnection()->getTablePrefix()];
             }
             $manifest[$package] = [$registered[$package], $adapter::class, $owned, $sources];

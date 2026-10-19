@@ -45,6 +45,7 @@ final readonly class OwnershipAdoptionCoordinator
         private OwnershipConfigurationFingerprint $ownership,
         private OwnershipOperationRecorder $audit,
         private OwnershipAdoptionScope $scope,
+        private OwnershipAdoptionConservation $conservation,
     ) {}
 
     /**
@@ -255,24 +256,32 @@ final readonly class OwnershipAdoptionCoordinator
     private function verifyGraph(OwnershipAdoptionPlan $plan, array $run, array $graph, bool $requiresMaintenance = true): OwnershipVerification
     {
         $errors = [];
+        $reports = [];
         foreach ($graph['adapters'] as $package => $adapter) {
             if (! $run['checkpoints']['adapters'][$package]['prepared'] || ! $run['checkpoints']['adapters'][$package]['done']) {
                 $errors[] = $package.':backfill_incomplete';
 
                 continue;
             }
-            foreach ($this->invoke($plan, $adapter, 'verify', fn () => $adapter->verify($plan), $requiresMaintenance)->errors as $error) {
+            $verification = $this->invoke($plan, $adapter, 'verify', function () use ($plan, $adapter): OwnershipVerification {
+                $specific = $adapter->verify($plan);
+                $conserved = $this->conservation->verify($plan, $adapter);
+
+                return new OwnershipVerification([...$specific->errors, ...$conserved->errors], [...$specific->resources, ...$conserved->resources]);
+            }, $requiresMaintenance);
+            $reports = [...$reports, ...$verification->resources];
+            foreach ($verification->errors as $error) {
                 if (mb_strlen($error) > 255) {
                     throw new OwnershipConfigurationInvalid('Verification errors must be bounded codes or record identifiers.');
                 }
                 $errors[] = $package.':'.$error;
                 if (count($errors) >= 100) {
-                    return new OwnershipVerification($errors);
+                    return new OwnershipVerification($errors, $reports);
                 }
             }
         }
 
-        return new OwnershipVerification($errors);
+        return new OwnershipVerification($errors, $reports);
     }
 
     /**
