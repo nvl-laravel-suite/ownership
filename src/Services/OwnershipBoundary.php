@@ -18,13 +18,18 @@ use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Ownership\Services\OwnershipIdentityFields;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 use Nvl\Support\Tenancy\Services\PersistedTenantStorage;
 
-/** Intersects package queries and writes with admitted canonical persisted ownership. @internal */
+/**
+ * Intersects package queries and writes with admitted canonical persisted ownership.
+ *
+ * @internal
+ */
 final readonly class OwnershipBoundary implements BoundaryContract
 {
     /** Resolve current scope services on every entry, including retained workers. */
@@ -120,19 +125,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
     /** @return list<string> */
     public function protectedFields(OwnershipResourceDefinition $resource): array
     {
-        $fields = [(new $resource->model)->getKeyName(), 'owner_scope_key', 'owner_reference'];
-        if ($resource->ownership->foreignKey !== null) {
-            $fields[] = $resource->ownership->foreignKey;
-        }
-        if ($resource->ownership->strategy === 'inherited') {
-            $relation = $this->container->make(InheritedOwnershipResolver::class)->relation($resource);
-            $fields[] = $relation->getForeignKeyName();
-            if ($relation instanceof MorphTo) {
-                $fields[] = $relation->getMorphType();
-            }
-        }
-
-        return array_values(array_unique([...$fields, ...$resource->immutableFields]));
+        return $this->container->make(OwnershipIdentityFields::class)->forResource($resource);
     }
 
     /** Preserve native scalar bytes and complete JSON identity across driver serialization. */

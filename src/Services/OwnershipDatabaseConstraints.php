@@ -8,7 +8,11 @@ use Illuminate\Database\Connection;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 
-/** Enforces immutable partitions and primary pivots on every supported database. @internal */
+/**
+ * Enforces immutable partitions and primary pivots on every supported database.
+ *
+ * @internal
+ */
 final readonly class OwnershipDatabaseConstraints
 {
     /**
@@ -53,12 +57,46 @@ final readonly class OwnershipDatabaseConstraints
         $this->trigger($connection, $table, 'update', 'immutable', '('.$invalid.') OR (OLD.'.$wrap('owner_scope_key').' IS NOT NULL AND ('.implode(' OR ', $changes).'))');
     }
 
-    /** Enforce an additional concrete reference in the same native owner partition. */
-    public function reference(Connection $connection, string $table, string $foreignKey, string $parentTable, string $parentKey, bool $nullable = false): void
+    /** Freeze durable scalar/JSON fields, optionally after publication or allowing terminal erasure.
+     * @param  non-empty-list<string>  $fields
+     * @param  list<string>  $afterStatuses
+     * @param  list<string>  $eraseStatuses
+     */
+    public function freeze(Connection $connection, string $table, array $fields, string $statusColumn = 'status', array $afterStatuses = [], array $eraseStatuses = []): void
+    {
+        $grammar = $connection->getQueryGrammar();
+        $changes = [];
+        foreach ($fields as $column) {
+            $old = 'OLD.'.$grammar->wrap($column);
+            $new = 'NEW.'.$grammar->wrap($column);
+            $different = match ($connection->getDriverName()) {
+                'pgsql' => 'to_jsonb('.$old.') IS DISTINCT FROM to_jsonb('.$new.')','mysql','mariadb' => 'NOT ('.$old.' <=> '.$new.')',default => $old.' IS NOT '.$new
+            };
+            if ($eraseStatuses !== []) {
+                $statuses = implode(',', array_map(fn (string $v): string => $connection->getPdo()->quote($v), $eraseStatuses));
+                $different = '('.$different.') AND NOT ('.$new.' IS NULL AND NEW.'.$grammar->wrap($statusColumn).' IN ('.$statuses.'))';
+            }
+            $changes[] = '('.$different.')';
+        }
+        $condition = implode(' OR ', $changes);
+        if ($afterStatuses !== []) {
+            $statuses = implode(',', array_map(fn (string $v): string => $connection->getPdo()->quote($v), $afterStatuses));
+            $condition = 'OLD.'.$grammar->wrap($statusColumn).' IN ('.$statuses.') AND ('.$condition.')';
+        }
+        $this->trigger($connection, $table, 'update', 'freeze:'.hash('sha256', json_encode([$fields, $statusColumn, $afterStatuses, $eraseStatuses], JSON_THROW_ON_ERROR)), $condition);
+    }
+
+    /** Enforce an additional concrete reference in the same native owner partition.
+     * @param  list<string>  $sameColumns
+     */
+    public function reference(Connection $connection, string $table, string $foreignKey, string $parentTable, string $parentKey, bool $nullable = false, array $sameColumns = []): void
     {
         $grammar = $connection->getQueryGrammar();
         $foreign = 'NEW.'.$grammar->wrap($foreignKey);
         $missing = 'NOT EXISTS (SELECT 1 FROM '.$grammar->wrapTable($parentTable).' WHERE '.$grammar->wrap($parentKey).' = '.$foreign.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').')';
+        foreach ($sameColumns as $column) {
+            $missing = substr($missing, 0, -1).' AND '.$grammar->wrap($column).' = NEW.'.$grammar->wrap($column).')';
+        }
         $invalid = $nullable ? $foreign.' IS NOT NULL AND '.$missing : $foreign.' IS NULL OR '.$missing;
         foreach (['insert', 'update'] as $event) {
             $this->trigger($connection, $table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey), $invalid);
@@ -83,7 +121,7 @@ final readonly class OwnershipDatabaseConstraints
     }
 
     /** Enforce the closed native morph allowlist and exact textual keys in the same owner partition.
-     * @param  non-empty-list<array{type:string,table:string,key:string}>  $targets
+     * @param  list<array{type:string,table:string,key:string}>  $targets
      */
     public function polymorphicReference(Connection $connection, string $table, string $typeColumn, string $keyColumn, array $targets): void
     {
@@ -102,7 +140,11 @@ final readonly class OwnershipDatabaseConstraints
             $morph = $connection->getPdo()->quote($target['type']);
             $valid[] = '('.$type.' = '.$morph.' AND EXISTS (SELECT 1 FROM '.$grammar->wrapTable($target['table']).' WHERE '.$text.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').'))';
         }
-        $invalid = $type.' IS NULL OR '.$key.' IS NULL OR NOT ('.implode(' OR ', $valid).')';
+        $invalid = $type.' IS NULL OR '.$key.' IS NULL OR NOT ('.($valid === [] ? '0=1' : implode(' OR ', $valid)).')';
+        $existing = str_replace('NEW.', $grammar->wrap('nvl_existing').'.', $invalid);
+        if ($connection->selectOne('SELECT 1 FROM '.$grammar->wrapTable($table).' AS '.$grammar->wrap('nvl_existing').' WHERE '.$existing.' LIMIT 1', [], false) !== null) {
+            throw new OwnershipConfigurationInvalid('Existing polymorphic references cross their canonical ownership boundary.');
+        }
         foreach (['insert', 'update'] as $event) {
             $this->trigger($connection, $table, $event, 'polymorphic:'.$typeColumn.':'.$keyColumn, $invalid);
         }
