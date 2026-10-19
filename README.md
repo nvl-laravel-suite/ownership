@@ -2,6 +2,23 @@
 
 [← NVL Laravel Suite](https://github.com/nvl-laravel-suite)
 
+## Quickstart
+
+This is prepared 6.0.0 source. Use reviewed local archives until public tags are
+indexed. An ordinary unowned host does not need this package. For isolated Media,
+install the selected packages, keep the runtime disabled, and follow the model,
+admission and adoption sections below before enabling traffic:
+
+```sh
+composer require nvl/ownership:^6.0 nvl/media:^6.0
+php artisan vendor:publish --tag=nvl-ownership-config
+php artisan vendor:publish --tag=nvl-ownership-skills
+php artisan nvl:ownership:doctor --strict --format=json
+```
+
+Installation and Doctor output do not adopt existing storage or authorize an
+actor. Bind host admission, select migrations, and complete reviewed adoption.
+
 ## Purpose
 
 Optional ownership isolation for ordinary host Eloquent models. A consumer chooses
@@ -11,7 +28,7 @@ reads, immutable assignment, source transaction fences, scalar queue capture, an
 reviewed adoption. It installs no Company, User, Tenant, membership or role models.
 Host authorization remains required inside an admitted owner.
 
-This unreleased implementation now covers the stateful NVL package graph, including
+The prepared 6.0.0 implementation covers the stateful NVL package graph, including
 Auth, Tasks, CSV, Mail, Billing, Payments and Translations. Install only the domain
 packages you need. Tenancy remains an explicitly selected migration bridge;
 ordinary unowned applications need neither enforcement runtime. Production release
@@ -21,7 +38,7 @@ certification and deployment-specific cutover rehearsal remain pending.
 
 | Item | Value |
 |---|---|
-| Installed through | `composer require nvl/ownership:^5.0` |
+| Installed through | `composer require nvl/ownership:^6.0` |
 | Module identifier | `nvl/ownership` |
 | PHP namespace | `Nvl\Ownership` |
 | Service provider | `Nvl\Ownership\Providers\OwnershipServiceProvider` |
@@ -29,15 +46,16 @@ certification and deployment-specific cutover rehearsal remain pending.
 
 ## Requirements and installation
 
-PHP 8.4, Core 5.1, and Laravel 13 are the verified enabled-runtime baseline. The
+PHP 8.4, Core 6, and Laravel 13 are the verified enabled-runtime baseline. The
 manifest permits Laravel 12 installation with the feature disabled; enabled
 isolation requires Laravel's transaction-committing boundary and fails closed when
-that capability is unavailable. PostgreSQL 17 is exercised natively. MySQL/MariaDB
-and other version combinations require separate runtime evidence.
+that capability is unavailable. Native archive consumers passed on PostgreSQL 17 and MySQL 8.4 with Redis and
+private storage, including worker and runtime-removal checks. Complete MariaDB
+and other platform combinations require separate evidence.
 
 ```sh
-# Use your private/path repository until these candidates are released.
-composer require nvl/ownership:^5.0 nvl/media:^5.1
+# Use reviewed local archives until 6.0.0 is published.
+composer require nvl/ownership:^6.0 nvl/media:^6.0
 php artisan vendor:publish --tag=nvl-ownership-config
 php artisan vendor:publish --tag=nvl-ownership-skills
 ```
@@ -290,12 +308,6 @@ before enabling service. Rehearse backups, exact mappings, interruption/resumpti
 negative cross-owner operations, private delivery and real worker restoration on
 the deployment's actual database and queue transports.
 
-## License
-
-MIT. See [LICENSE](LICENSE), [CHANGELOG.md](CHANGELOG.md),
-[CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).
-
-
 ## Verified public owner sites
 
 Public packages use `OwnerSiteResolver`, `PublicOwnerSiteRunner` and
@@ -356,3 +368,27 @@ Native translation copy uses `TranslationOverrideRepository` and
 `ExportTranslationOverridesContract`, with `nvl-translations.models.override` and
 an exact `nvl-translations.ownership.keys` allowlist. The source language catalog
 remains a global editing workspace. Owner-scoped copy never rewrites source files.
+
+## Testing your app
+
+Bind a host `OwnerAccess` policy and use persisted native owners/actors with the
+configured subclasses. Exercise your real public workflow inside an injected
+`OwnershipRunner`; test allowed and cross-owner denial, immutable/quiet writes,
+canonical inherited relations and transaction rollback. Use Laravel container
+substitutions only for host orchestration tests. Ownership provides no universal
+fake or domain model factory. Native queue restoration, private storage and
+runtime-removal denial require the real deployment adapters; the source rehearsal
+checkpoint does not certify an arbitrary host configuration.
+
+Ownership declares no domain events; see [event behavior](docs/events.md). Protocol
+state is not an application outbox and Laravel database/queue lifecycle hooks are
+not public domain facts. Keep actual worker tests distinct from `Queue::fake()`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## License
+
+MIT. See [LICENSE](LICENSE), [CHANGELOG.md](CHANGELOG.md),
+[CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).

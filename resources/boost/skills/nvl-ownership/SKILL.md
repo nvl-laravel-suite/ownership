@@ -5,8 +5,14 @@ description: Use when integrating or reviewing nvl/ownership, native owner colum
 
 # NVL Ownership
 
+For major 6, use native Ownership for new isolated integrations and the installed
+Ownership README/UPGRADING runbook for configured subclasses and reviewed adoption.
+Ordinary unowned hosts keep unscoped declarations; installation does not enable
+isolation. Tenant-specific APIs below apply only to the explicitly selected
+deprecated Tenancy bridge; they never substitute for native owner admission.
+
 Read the installed Ownership README and UPGRADING guide for exact API and rollout
-steps. This candidate integrates the stateful NVL graph, including Auth, Media, Pages,
+steps. Major 6 integrates the stateful NVL graph, including Auth, Media, Pages,
 Forms, Tasks, Mail, financial workflows and native translation overrides. NVL Auth/Tenancy are optional.
 
 ## Consumer model
@@ -72,3 +78,12 @@ plan UUID. Audit actor strings never grant authority. Bind fresh host adoption
 access only after authenticating the actual operator and checking producer/request/
 queue drain. Release infrastructure certification remains separate from unit and
 feature evidence. Never invent readiness or conservation markers.
+
+## Canonical configuration ownership
+
+Use `config/nvl-ownership.php` and `nvl-ownership.*` configuration only. Both
+`enabled` and `migrations.enabled` default to false. Publish `nvl-ownership-config`,
+`nvl-ownership-skills` and, only for host-managed protocol migrations,
+`nvl-ownership-migrations`. Never load vendor and published migration copies
+together. The host owns its native owner-column/pivot migrations and policies.
+Configure subclass selectors in the owning domain package before provider boot.

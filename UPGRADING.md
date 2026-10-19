@@ -1,10 +1,10 @@
 # Upgrading to ownership
 
-This unreleased candidate includes native integrations across the NVL stateful
+The prepared 6.0.0 release includes native integrations across the NVL stateful
 package graph. Tenancy is an explicit temporary bridge for existing installations. Keep production disabled until the exact deployment graph and
 backend have been rehearsed.
 
-1. Deploy the Core 5.1 bridge and converted packages before cutover. Core remains
+1. Deploy the Core 6 bridge and converted packages before cutover. Core remains
    installed and rejects prepared/adopted storage when Ownership is removed or
    disabled. Old binaries predating that bridge cannot safely serve adopted data.
 2. Back up every physical source and preserve its durable store UUID. Review model
@@ -49,8 +49,8 @@ proof. Billing and Payments retain existing provider correlation and idempotency
 keys. Original translation overrides remain in their old table while exact native
 copies preserve their IDs and revisions.
 
-The ownership replacement targets the next reviewed major release. The explicit
+The ownership replacement is prepared as the coordinated 6.0.0 release. The explicit
 Tenancy bridge and deprecated tenant-specific entry points have a full migration
 window; removal is no earlier than major 7, after separately reviewed retention
-and retirement migrations. Current source constraints are development candidates,
-not a claim that this major transition has been published or certified.
+and retirement migrations. Prepared source constraints do not establish publication. The final merged commit
+requires exact-source release evidence, then mirror/Packagist and public install verification.

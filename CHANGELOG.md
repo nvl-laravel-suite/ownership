@@ -2,10 +2,9 @@
 
 ## [Unreleased]
 
-- Optional native model ownership, exact configured model identities, guarded column
-  and exclusive concrete pivot assignment, and canonical inherited boundaries.
-- Reviewed resumable adoption, durable physical source identities and fail-closed
-  activation barriers, source transaction leases, and native queue restoration.
-- Integrations through Settings, Activity, Translatable, Media, Comments, Metafields,
-  Taxonomy, Content compositions and Templates. Production activation and the remaining
-  domain packages require subsequent rollout work.
+## [6.0.0] - 2026-10-20
+
+### Changed
+
+- Introduce optional native owner columns, exclusive concrete pivots and inherited ownership; preserve host keys and authorization. Add fenced, resumable plan/prepare/backfill/verify/activate commands, source identities, transaction leases, queue admission and runtime removal protection across the stateful NVL graph.
+- Align required/development NVL peers on `^6.0`, optional peer conflicts on major 6, and `dev-main` on `6.x-dev`. Review [UPGRADING.md](UPGRADING.md) before rollout.
