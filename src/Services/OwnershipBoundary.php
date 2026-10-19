@@ -79,8 +79,9 @@ final readonly class OwnershipBoundary implements BoundaryContract
             }
         }
         $fresh = $this->container->make(OwnershipRecordReader::class)->persisted($record, $definition, $record->getConnection()->transactionLevel() > 0);
+        $canonical = new $definition->model;
         foreach ($this->protectedFields($definition) as $field) {
-            if (! $this->samePersistedField($field, $record->getRawOriginal($field), $fresh->getRawOriginal($field))) {
+            if (! $this->samePersistedField($field, $record->getRawOriginal($field), $fresh->getRawOriginal($field), $canonical->hasCast($field, ['bool', 'boolean']))) {
                 throw new OwnershipViolation('The model no longer represents the persisted primary ownership facts.');
             }
         }
@@ -129,10 +130,15 @@ final readonly class OwnershipBoundary implements BoundaryContract
     }
 
     /** Preserve native scalar bytes and complete JSON identity across driver serialization. */
-    private function samePersistedField(string $field, mixed $original, mixed $persisted): bool
+    private function samePersistedField(string $field, mixed $original, mixed $persisted, bool $boolean): bool
     {
         if ($original === $persisted) {
             return true;
+        }
+        if ($boolean) {
+            $allowed = [false, true, 0, 1, '0', '1'];
+
+            return in_array($original, $allowed, true) && in_array($persisted, $allowed, true) && (bool) $original === (bool) $persisted;
         }
         if ($field === 'owner_reference' && is_string($original) && is_string($persisted)) {
             $before = json_decode($original, true, 16, JSON_THROW_ON_ERROR);

@@ -94,9 +94,10 @@ final readonly class OwnershipDatabaseConstraints
     }
 
     /** Freeze each assigned external identity while allowing its first provider assignment.
+     * @param  list<string>  $afterStatuses
      * @param  non-empty-list<string>  $fields
      */
-    public function freezeAssigned(Connection $connection, string $table, array $fields): void
+    public function freezeAssigned(Connection $connection, string $table, array $fields, ?string $statusColumn = null, array $afterStatuses = []): void
     {
         $changes = [];
         foreach ($fields as $field) {
@@ -109,7 +110,16 @@ final readonly class OwnershipDatabaseConstraints
             };
             $changes[] = '('.$old.' IS NOT NULL AND ('.$different.'))';
         }
-        $this->trigger($connection, $table, 'update', 'assigned:'.hash('sha256', json_encode($fields, JSON_THROW_ON_ERROR)), implode(' OR ', $changes));
+        $condition = implode(' OR ', $changes);
+        $purpose = 'assigned:'.hash('sha256', json_encode($fields, JSON_THROW_ON_ERROR));
+        if ($statusColumn !== null && $afterStatuses !== []) {
+            $statuses = implode(',', array_map(fn (string $status): string => $connection->getPdo()->quote($status), $afterStatuses));
+            $condition = 'OLD.'.$connection->getQueryGrammar()->wrap($statusColumn).' IN ('.$statuses.') AND ('.$condition.')';
+            $purpose .= ':'.hash('sha256', json_encode([$statusColumn, $afterStatuses], JSON_THROW_ON_ERROR));
+        } elseif ($statusColumn !== null || $afterStatuses !== []) {
+            throw new OwnershipConfigurationInvalid('Conditional assigned identities require both a status column and statuses.');
+        }
+        $this->trigger($connection, $table, 'update', $purpose, $condition);
     }
 
     /** Enforce an additional concrete reference in the same native owner partition.
