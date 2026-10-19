@@ -23,6 +23,7 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipContextParticipants;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
+use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 use Throwable;
 
 /** Admits work and restores state without retaining an old request's adapters. */
@@ -107,6 +108,29 @@ final readonly class OwnershipRunner implements RunnerContract
         return $this->within(new OwnershipSnapshot(OwnershipContextMode::Central, principal: ['kind' => 'actor', 'type' => $actor::class, 'id' => (string) $id], operation: $operation, generations: $generations), $callback);
     }
 
+    /**
+     * Install public admission after the boundary resolver verifies canonical owner and origin.
+     *
+     * @internal
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $callback
+     * @return TResult
+     */
+    public function publicSite(VerifiedOwnerSiteContext $site, Closure $callback): mixed
+    {
+        $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+
+        return $this->within(new OwnershipSnapshot(
+            OwnershipContextMode::Owner,
+            $site->owner,
+            ['kind' => 'public', 'type' => 'site', 'id' => $site->site],
+            generations: $this->container->make(OwnershipInstallationState::class)->generations(),
+            publicSite: $site,
+        ), $callback);
+    }
+
     /** Require an explicit deployment allowlist independently of host authorization. */
     private function assertOperation(string $key, string $operation): void
     {
@@ -128,6 +152,9 @@ final readonly class OwnershipRunner implements RunnerContract
     {
         $context = $this->container->make(ScopedOwnershipContext::class);
         $previous = $context->snapshot();
+        if ($previous->publicSite !== null && $snapshot !== $previous) {
+            throw new OwnershipViolation('Public admission cannot switch owner, site or authority.');
+        }
         $connections = $this->container->make(OwnershipConnections::class);
         $levels = [];
         foreach ($connections->participating() as $id => $connection) {

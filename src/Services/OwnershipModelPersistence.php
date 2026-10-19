@@ -9,6 +9,7 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Nvl\Ownership\ValueObjects\OwnershipAssignment;
+use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Contracts\OwnershipModelGuard;
 use Nvl\Support\Ownership\Contracts\OwnershipModelPersistence as PersistenceContract;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
@@ -24,6 +25,13 @@ final readonly class OwnershipModelPersistence implements PersistenceContract
     /** @param Closure(): bool $persist */
     public function save(Model $model, Closure $persist): bool
     {
+        $public = $this->container->make(OwnershipContext::class)->snapshot()->publicSite;
+        if ($public !== null) {
+            $resource = $this->container->make(OwnershipResourceRegistry::class)->forModel($model);
+            if (! in_array($resource->key, $public->writableResources, true)) {
+                throw new OwnershipViolation('Public site admission does not grant management writes.');
+            }
+        }
         if (! $this->owned($model)) {
             return $this->container->make(LegacyOwnershipModelPersistence::class)->save($model, $persist);
         }
@@ -63,6 +71,13 @@ final readonly class OwnershipModelPersistence implements PersistenceContract
     /** @param Closure(): (bool|null) $persist */
     public function delete(Model $model, Closure $persist): ?bool
     {
+        $public = $this->container->make(OwnershipContext::class)->snapshot()->publicSite;
+        if ($public !== null) {
+            $resource = $this->container->make(OwnershipResourceRegistry::class)->forModel($model);
+            if (! in_array($resource->key, $public->writableResources, true)) {
+                throw new OwnershipViolation('Public site admission does not grant management writes.');
+            }
+        }
         if (! $this->owned($model)) {
             return $this->container->make(LegacyOwnershipModelPersistence::class)->delete($model, $persist);
         }

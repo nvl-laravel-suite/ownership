@@ -12,7 +12,8 @@ reviewed adoption. It installs no Company, User, Tenant, membership or role mode
 Host authorization remains required inside an admitted owner.
 
 This is an unreleased implementation candidate through Settings, Activity,
-Translatable and Media. Other NVL integrations remain on the legacy authority and
+Translatable, Media, Comments, Metafields, Taxonomy, Content, Templates, Pages, SEO
+and Forms. Other NVL integrations remain on the legacy authority and
 cannot be silently enrolled. No production activation follows from installing it.
 
 ## Quick reference
@@ -292,3 +293,27 @@ the deployment's actual database and queue transports.
 
 MIT. See [LICENSE](LICENSE), [CHANGELOG.md](CHANGELOG.md),
 [CONTRIBUTING.md](CONTRIBUTING.md), and [SECURITY.md](SECURITY.md).
+
+
+## Verified public owner sites
+
+Public packages use `OwnerSiteResolver`, `PublicOwnerSiteRunner` and
+`ResolvePublicOwnerSite` with Core's immutable `VerifiedOwnerSiteContext`.
+Bind a host resolver backed by enabled persisted origin mappings; unknown sites
+fail closed. Only the resolved full native owner, exact canonical request origin,
+site and declared resource graph are admitted. `resources` is a nonempty list of
+read capabilities and `writableResources` is its explicit write subset. Locale,
+content scope and site remain distinct from the owner reference. Public requests
+cannot mint actor, system, central, catalog-management or queued authority.
+
+Outside HTTP, use `PublicOwnerSiteRunner::run(Request::create($canonicalOrigin),
+$callback)` to revalidate the same mapping. State restores on normal return and
+failure; nested public work must keep exactly the same verified site/capabilities.
+Public Form callbacks revalidate that identity and generation after native commit.
+Use separately authorized system workflows for durable background work.
+
+Owned root instance counters, quiet counters, saves, deletes and restorations
+retain the canonical source guard. Configured subclasses cannot replace those
+persistence seams. Query builders still belong behind documented package Actions
+and capabilities; ownership is not a replacement for host authorization or native
+SQL permissions.

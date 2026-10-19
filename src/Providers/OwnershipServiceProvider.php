@@ -9,11 +9,15 @@ use Illuminate\Container\Container;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Contracts\Queue\Factory as QueueFactory;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Events\ConnectionEstablished;
 use Illuminate\Database\Events\TransactionCommitting;
+use Illuminate\Foundation\Http\Kernel as HttpKernel;
 use Illuminate\Queue\CallQueuedHandler;
+use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\ServiceProvider;
 use Nvl\Ownership\Compatibility\UnmappedTenantRunner;
@@ -25,6 +29,7 @@ use Nvl\Ownership\Contracts\OwnershipActorResolver;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
 use Nvl\Ownership\Contracts\OwnershipRunner as RunnerContract;
 use Nvl\Ownership\Contracts\OwnerSystemAccess;
+use Nvl\Ownership\Http\Middleware\ResolvePublicOwnerSite;
 use Nvl\Ownership\Observers\OwnershipModelObserver;
 use Nvl\Ownership\Queue\OwnershipCallQueuedHandler;
 use Nvl\Ownership\Queue\OwnershipDatabaseBatchRepository;
@@ -58,7 +63,9 @@ use Nvl\Support\Ownership\Contracts\OwnershipMaintenanceState;
 use Nvl\Support\Ownership\Contracts\OwnershipModelGuard;
 use Nvl\Support\Ownership\Contracts\OwnershipModelPersistence as PersistenceContract;
 use Nvl\Support\Ownership\Contracts\OwnershipQueueContext as QueueContextContract;
+use Nvl\Support\Ownership\Contracts\OwnershipReadiness as ContractsOwnershipReadiness;
 use Nvl\Support\Ownership\Contracts\OwnershipWriter as PackageWriterContract;
+use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\DisabledOwnershipBatchOptions;
 use Nvl\Support\Ownership\Services\DisabledOwnershipContext;
 use Nvl\Support\Ownership\Services\DisabledOwnershipQueueContext;
@@ -88,7 +95,7 @@ final class OwnershipServiceProvider extends ServiceProvider
         $this->app->scopedIf(OwnershipWriteLease::class);
         $this->app->bind(OwnershipModelGuard::class, OwnershipModelObserver::class);
         $this->app->bind(PersistenceContract::class, OwnershipModelPersistence::class);
-        $this->app->extend(\Nvl\Support\Ownership\Contracts\OwnershipReadiness::class, static fn ($readiness, Application $app) => $readiness instanceof UnavailableOwnershipReadiness ? $app->make(OwnershipReadiness::class) : $readiness);
+        $this->app->extend(ContractsOwnershipReadiness::class, static fn ($readiness, Application $app) => $readiness instanceof UnavailableOwnershipReadiness ? $app->make(OwnershipReadiness::class) : $readiness);
         $this->app->extend(PackageWriterContract::class, static fn (PackageWriterContract $writer, Application $app): PackageWriterContract => $writer instanceof LegacyOwnershipWriter ? $app->make(PackageOwnershipWriter::class) : $writer);
         $this->app->scoped(OwnershipMaintenanceState::class, static fn (Application $app): OwnershipMaintenanceState => $app->make(OwnershipAdoptionScope::class));
         $this->app->bindIf(OwnershipAdoptionAccess::class, DenyOwnershipAdoptionAccess::class);
@@ -120,6 +127,14 @@ final class OwnershipServiceProvider extends ServiceProvider
     /** Validate deployment options without actors or database connections. */
     public function boot(OwnershipConfiguration $configuration): void
     {
+        $this->callAfterResolving(Kernel::class, static function (Kernel $kernel): void {
+            if (! $kernel instanceof HttpKernel) {
+                throw new OwnershipConfigurationInvalid('Public ownership requires native middleware ordering support.');
+            }
+            $kernel->addToMiddlewarePriorityBefore(ThrottleRequests::class, ResolvePublicOwnerSite::class);
+            $kernel->addToMiddlewarePriorityBefore(SubstituteBindings::class, ResolvePublicOwnerSite::class);
+        });
+
         $configuration->validate();
         if ($this->app->make(Repository::class)->get('nvl-ownership.enabled') === true) {
             $this->app->extend(BatchOptionsContract::class, static fn (BatchOptionsContract $options, Application $app): BatchOptionsContract => $options instanceof DisabledOwnershipBatchOptions ? $app->make(OwnershipBatchOptions::class) : $options);

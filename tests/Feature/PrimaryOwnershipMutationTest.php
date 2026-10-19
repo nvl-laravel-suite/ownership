@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\CapturedOperation;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipBoundary;
@@ -72,4 +73,19 @@ it('denies a missing primary pivot and never uses its loaded owner collection as
     app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
         expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
     });
+});
+
+it('rejects foreign instance counters before observers or native SQL including quiet mutation', function (): void {
+    DB::table('ownership_test_captured_operations')->where('id', 2)->update(['subject_id' => 0]);
+    $foreign = CapturedOperation::withoutGlobalScopes()->findOrFail(2);
+    $observed = 0;
+    CapturedOperation::updating(function () use (&$observed): void {
+        $observed++;
+    });
+    app(OwnershipRunner::class)->run(Company::findOrFail(7), Actor::firstOrFail(), function () use ($foreign): void {
+        expect(fn () => $foreign->increment('subject_id'))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $foreign->decrementQuietly('subject_id'))->toThrow(OwnershipViolation::class);
+    });
+    expect($observed)->toBe(0)
+        ->and(DB::table('ownership_test_captured_operations')->where('id', 2)->value('subject_id'))->toBe(0);
 });

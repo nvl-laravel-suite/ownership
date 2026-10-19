@@ -32,6 +32,15 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Contracts\\OwnerSiteResolver": {
+            "kind": "interface",
+            "file": "src/Contracts/OwnerSiteResolver.php",
+            "methods": [
+                "resolve"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\Contracts\\OwnerSystemAccess": {
             "kind": "interface",
             "file": "src/Contracts/OwnerSystemAccess.php",
@@ -83,6 +92,16 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Http\\Middleware\\ResolvePublicOwnerSite": {
+            "kind": "class",
+            "file": "src/Http/Middleware/ResolvePublicOwnerSite.php",
+            "methods": [
+                "__construct",
+                "handle"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\Services\\OwnershipAdoptionCoordinator": {
             "kind": "class",
             "file": "src/Services/OwnershipAdoptionCoordinator.php",
@@ -112,6 +131,16 @@
             "methods": [
                 "__construct",
                 "create"
+            ],
+            "properties": [],
+            "constants": []
+        },
+        "Nvl\\Ownership\\Services\\PublicOwnerSiteRunner": {
+            "kind": "class",
+            "file": "src/Services/PublicOwnerSiteRunner.php",
+            "methods": [
+                "__construct",
+                "run"
             ],
             "properties": [],
             "constants": []

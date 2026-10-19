@@ -148,6 +148,10 @@ final readonly class OwnershipBoundary implements BoundaryContract
     private function admit(OwnershipResourceDefinition $resource): ?OwnershipSnapshot
     {
         $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
+        $public = $this->container->make(OwnershipContext::class)->snapshot()->publicSite;
+        if ($public !== null && ! in_array($resource->key, $public->resources, true)) {
+            throw new OwnershipViolation('The resource is outside the admitted public site graph.');
+        }
         if ($resource->ownership->strategy === 'unscoped') {
             $this->container->make(PersistedTenantStorage::class)->assertUnadopted((new $resource->model)->getConnection(), $resource->key);
 
