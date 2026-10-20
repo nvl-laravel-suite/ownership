@@ -4,8 +4,8 @@
 
 ## Quickstart
 
-This is prepared 6.0.0 source. Use reviewed local archives until public tags are
-indexed. An ordinary unowned host does not need this package. For isolated Media,
+Version 6.0.0 is published on Packagist. An ordinary unowned host does not need
+this package. For isolated Media,
 install the selected packages, keep the runtime disabled, and follow the model,
 admission and adoption sections below before enabling traffic:
 
@@ -28,11 +28,12 @@ reads, immutable assignment, source transaction fences, scalar queue capture, an
 reviewed adoption. It installs no Company, User, Tenant, membership or role models.
 Host authorization remains required inside an admitted owner.
 
-The prepared 6.0.0 implementation covers the stateful NVL package graph, including
+The 6.0.0 implementation covers the stateful NVL package graph, including
 Auth, Tasks, CSV, Mail, Billing, Payments and Translations. Install only the domain
 packages you need. Tenancy remains an explicitly selected migration bridge;
-ordinary unowned applications need neither enforcement runtime. Production release
-certification and deployment-specific cutover rehearsal remain pending.
+ordinary unowned applications need neither enforcement runtime. The release passed
+the native ownership cutover gate and a fresh public Composer installation.
+Deployment-specific cutover rehearsal remains required before enabling isolation.
 
 ## Quick reference
 
@@ -54,7 +55,6 @@ private storage, including worker and runtime-removal checks. Complete MariaDB
 and other platform combinations require separate evidence.
 
 ```sh
-# Use reviewed local archives until 6.0.0 is published.
 composer require nvl/ownership:^6.0 nvl/media:^6.0
 php artisan vendor:publish --tag=nvl-ownership-config
 php artisan vendor:publish --tag=nvl-ownership-skills
