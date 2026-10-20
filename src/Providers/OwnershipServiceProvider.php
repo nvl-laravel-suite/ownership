@@ -83,11 +83,13 @@ use Nvl\Support\Ownership\Services\UnavailableOwnershipSystemRunner;
 use Nvl\Support\Providers\SupportServiceProvider;
 use Nvl\Support\Tenancy\Contracts\TenantRunner;
 use Nvl\Support\Traits\MergesPackageConfiguration;
+use Nvl\Support\Traits\RegistersNamespacedResources;
 
 /** Registers the optional runtime without installing owner or tenant schema. */
 final class OwnershipServiceProvider extends ServiceProvider
 {
     use MergesPackageConfiguration;
+    use RegistersNamespacedResources;
 
     /** Register immutable metadata and fresh execution services. */
     public function register(): void
