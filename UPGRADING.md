@@ -1,6 +1,14 @@
 # Upgrading to ownership
 
-The prepared 6.0.0 release includes native integrations across the NVL stateful
+## 6.0.1 consolidation patch
+
+The shared native backfill implementation first ships in Ownership 6.0.1. Domain patches using it reject an older installed Ownership runtime. Ownership remains optional; ordinary unowned hosts do not need to install it.
+
+This patch introduces no schema migration or data conversion. Keep existing model subclasses, ownership declarations, adoption cursors and queued payloads. Existing source transactions, immutable owner checks and legacy exception contracts are retained. Deploy with the normal configuration-cache rebuild and worker restart; a completed adoption does not need to be repeated.
+
+## Major 6 ownership adoption
+
+The published 6.0.0 release includes native integrations across the NVL stateful
 package graph. Tenancy is an explicit temporary bridge for existing installations. Keep production disabled until the exact deployment graph and
 backend have been rehearsed.
 

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [6.0.1] - 2026-10-21
+
+### Changed
+
+- Share bounded native resource backfill across thirteen package adapters. Preserve resource order, resumable cursors, reviewed mappings, source transactions and package-specific transformations and verification.
+
 ## [6.0.0] - 2026-10-20
 
 ### Release fixes
