@@ -120,6 +120,19 @@
             "properties": [],
             "constants": []
         },
+        "Nvl\\Ownership\\Services\\FreshHostOwnershipAdoptionAdapter": {
+            "kind": "class",
+            "file": "src/Services/FreshHostOwnershipAdoptionAdapter.php",
+            "methods": [
+                "activate",
+                "backfill",
+                "prepare",
+                "resources",
+                "verify"
+            ],
+            "properties": [],
+            "constants": []
+        },
         "Nvl\\Ownership\\Services\\OwnershipAdoptionCoordinator": {
             "kind": "class",
             "file": "src/Services/OwnershipAdoptionCoordinator.php",

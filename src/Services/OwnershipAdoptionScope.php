@@ -32,6 +32,14 @@ final class OwnershipAdoptionScope implements OwnershipMaintenanceState
         return $this->invocation !== null;
     }
 
+    /** Require the exact registered adapter, persisted run and coordinator phase. */
+    public function assertAdapterInvocation(string $run, string $adapter, string $phase): void
+    {
+        if ($this->invocation !== compact('run', 'adapter', 'phase')) {
+            throw new OwnershipViolation('Host adoption helpers require their registered coordinator phase.');
+        }
+    }
+
     /** Allow schema helpers only in the coordinator's explicit nontransactional DDL phases. */
     public function assertSchemaAllowed(): void
     {

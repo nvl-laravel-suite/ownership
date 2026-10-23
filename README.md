@@ -176,6 +176,65 @@ Loaded relations, submitted owner fields and cached hash keys confer no authorit
 
 ## Adoption and migration ownership
 
+For a fresh, empty host schema, extend the public
+`Nvl\Ownership\Services\FreshHostOwnershipAdoptionAdapter`. Only declare your
+resource keys, with parents before their children:
+
+```php
+use Nvl\Ownership\Services\FreshHostOwnershipAdoptionAdapter;
+
+final class DocumentOwnershipAdoption extends FreshHostOwnershipAdoptionAdapter
+{
+    public function resources(): array
+    {
+        return ['app.documents', 'app.document-versions'];
+    }
+}
+```
+
+Register the host models and adapter in a service provider's `boot()` method,
+using injected `OwnershipResourceRegistry` and `OwnershipAdoptionRegistry`:
+
+```php
+use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
+
+$resources->register(new OwnershipResourceDefinition(
+    'app.documents', 'host-documents', Document::class, Document::ownershipDefinition(),
+));
+$resources->register(new OwnershipResourceDefinition(
+    'app.document-versions', 'host-documents', DocumentVersion::class,
+    DocumentVersion::ownershipDefinition(), parentResource: 'app.documents',
+));
+$adoptions->register('host-documents', DocumentOwnershipAdoption::class);
+```
+
+The models implement `Ownable` and use `HasOwnership` as described above. Their
+host migrations retain real, type-matching owner and parent foreign keys. Use the
+same pattern for other host roots and their declared children. Every
+inherited parent needs a registered adapter even when its table is empty.
+
+After the protocol migration, configure the final graph under authorized
+maintenance and inject `OwnershipAdoptionCoordinator` into the maintenance command:
+
+```php
+$operation = new OwnershipOperation('fresh-documents', 'operator', $operatorId);
+$plan = $coordinator->prepare(['host-documents'], [], $operation);
+while (! $coordinator->backfill($plan, 100, $operation)) {
+}
+if (! $coordinator->verify($plan)->passed()) {
+    throw new RuntimeException('Host ownership verification failed.');
+}
+$coordinator->activate($plan, $operation);
+```
+
+The helper installs native partition columns and immutable constraints through
+Ownership's schema implementation. The coordinator still checks authorization,
+maintenance, graph closure, mapping conservation and activation; the helper cannot
+be called independently to manufacture readiness. It refuses nonempty resources.
+Existing records require a dedicated reviewed adoption adapter and mappings.
+After activation, normal host writes use `OwnershipWriter` inside an admitted
+`OwnershipRunner` operation. Do not call schema internals or write readiness markers.
+
 For automatic vendor migrations, set `nvl-ownership.migrations.enabled=true` and
 do not publish `nvl-ownership-migrations`. For host-owned migrations, set
 `nvl-ownership.migrations.enabled=false` and run
