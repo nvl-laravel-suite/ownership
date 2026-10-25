@@ -73,6 +73,7 @@ it('rejects unknown hosts mismatched origins and newly unavailable canonical own
 
 it('restores the original scope after public resolution fails', function (): void {
     expect(fn () => app(PublicOwnerSiteRunner::class)->run('https://a.public.test', function (): never {
+        expect(ColumnAsset::query()->pluck('name')->all())->toBe(['private-7']);
         throw new RuntimeException('public failure');
     }))->toThrow(RuntimeException::class, 'public failure');
     expect(app(OwnershipContext::class)->snapshot()->mode)->toBe(OwnershipContextMode::Unresolved);
