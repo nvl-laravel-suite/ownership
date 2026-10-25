@@ -46,4 +46,14 @@ interface OwnershipRunner extends OwnershipSystemRunner
      * @return TResult
      */
     public function central(string $operation, Authenticatable $actor, Closure $callback): mixed;
+
+    /**
+     * Execute explicitly global work without granting protected resource authority.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $callback
+     * @return TResult
+     */
+    public function unowned(Closure $callback): mixed;
 }

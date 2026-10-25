@@ -105,7 +105,8 @@
             "methods": [
                 "central",
                 "run",
-                "runSystem"
+                "runSystem",
+                "unowned"
             ],
             "properties": [],
             "constants": []
@@ -161,6 +162,7 @@
             "file": "src/Services/PublicOwnerSiteRunner.php",
             "methods": [
                 "__construct",
+                "resolve",
                 "run"
             ],
             "properties": [],

@@ -111,8 +111,6 @@ final readonly class OwnershipRunner implements RunnerContract
     /**
      * Run explicitly global transport without granting access to any protected resource.
      *
-     * @internal
-     *
      * @template T
      *
      * @param  Closure(): T  $callback
@@ -139,6 +137,9 @@ final readonly class OwnershipRunner implements RunnerContract
      */
     public function publicSite(VerifiedOwnerSiteContext $site, Closure $callback): mixed
     {
+        if ($this->container->make(PublicOwnerSiteRunner::class)->resolve($site->canonicalOrigin) != $site) {
+            throw new OwnershipViolation('Public context must match fresh canonical origin admission.');
+        }
         $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
 
         return $this->within(new OwnershipSnapshot(

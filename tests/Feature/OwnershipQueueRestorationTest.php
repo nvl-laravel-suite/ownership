@@ -2,11 +2,18 @@
 
 declare(strict_types=1);
 
+use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\CallQueuedHandler;
 use Illuminate\Queue\Jobs\SyncJob;
+use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Queue\WorkerOptions;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
+use Nvl\Ownership\Console\Commands\QueueQuarantineRetryCommand;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
@@ -15,6 +22,8 @@ use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 beforeEach(function (): void {
     $this->allowOwners();
@@ -86,3 +95,71 @@ it('raw retries ordinary captured failures without eager native model restoratio
     expect(Artisan::call('nvl:queue:retry', ['id' => [$id]]))->toBe(0);
     expect(ProbeJob::$observations)->toBe([])->and(DB::table('jobs')->value('payload'))->toBe($payload);
 });
+
+/** Observes every native restoration entry without implementing the new ownership protocol. */
+final class RetiredOwnershipHostJob implements ShouldQueue
+{
+    /** @var list<string> */
+    public static array $observations = [];
+
+    public int $tries = 1;
+
+    /** @param array<string, mixed> $values */
+    public function __unserialize(array $values): void
+    {
+        self::$observations[] = 'restore';
+    }
+
+    /** Observe normal host execution. */
+    public function handle(): void
+    {
+        self::$observations[] = 'handle';
+    }
+
+    /** Observe terminal host execution. */
+    public function failed(?Throwable $exception): void
+    {
+        self::$observations[] = 'failed';
+    }
+}
+
+it('quarantines retired-only authority on enabled workers retaining a native host handler', function (bool $terminal): void {
+    QueueScenario::install();
+    RetiredOwnershipHostJob::$observations = [];
+    $handler = new CallQueuedHandler(app(Dispatcher::class), app());
+    app()->instance(CallQueuedHandler::class, $handler);
+    $queue = Queue::connection('database');
+    $wire = ['uuid' => (string) Str::uuid(), 'displayName' => RetiredOwnershipHostJob::class, 'job' => CallQueuedHandler::class.'@call', 'maxTries' => 1, 'data' => ['commandName' => RetiredOwnershipHostJob::class, 'command' => serialize(new RetiredOwnershipHostJob)]];
+    $wire['data']['nvl_tenancy'] = ['version' => 1, 'mode' => 'tenant', 'tenant_id' => 'retired-owner'];
+    unset($wire['data']['nvl_ownership']);
+    $raw = json_encode($wire, JSON_THROW_ON_ERROR);
+    $id = $queue->pushRaw($raw);
+    DB::table('jobs')->where('id', $id)->update(['attempts' => $terminal ? 1 : 0]);
+
+    if ($terminal) {
+        expect(fn () => app('queue.worker')->process('database', $queue->pop(), new WorkerOptions(maxTries: 1)))
+            ->toThrow(MaxAttemptsExceededException::class);
+    } else {
+        app('queue.worker')->process('database', $queue->pop(), new WorkerOptions(maxTries: 1));
+    }
+
+    expect(app(CallQueuedHandler::class))->toBe($handler)
+        ->and(RetiredOwnershipHostJob::$observations)->toBe([])
+        ->and(DB::table('jobs')->count())->toBe(0)
+        ->and(DB::table('failed_jobs')->count())->toBe(1)
+        ->and(DB::table('failed_jobs')->value('payload'))->toBe($raw)
+        ->and(DB::table('failed_jobs')->value('exception'))->toContain('NVL queue envelope rejected:');
+})->with(['normal worker' => false, 'terminal worker' => true]);
+
+it('rejects malformed raw retry identifiers before changing failed-job storage', function (mixed $ids): void {
+    $input = Mockery::mock(InputInterface::class);
+    $input->shouldReceive('getArgument')->with('id')->andReturn($ids);
+    $output = new BufferedOutput;
+    $command = app(QueueQuarantineRetryCommand::class);
+    $command->setLaravel(app());
+    $command->setInput($input);
+    $command->setOutput(new OutputStyle($input, $output));
+
+    expect(app()->call([$command, 'handle']))->toBe(1)
+        ->and($output->fetch())->toContain('Native failed-job IDs must be a nonempty list of strings.');
+})->with(['scalar' => ['not-a-list'], 'empty list' => [[]], 'invalid entry' => [[new stdClass]]]);

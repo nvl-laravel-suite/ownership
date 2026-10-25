@@ -35,7 +35,7 @@ final readonly class OwnershipQueueAdmission
         }
         $name = $data['commandName'] ?? null;
         try {
-            if (! array_key_exists('nvl_ownership', $data) && (! is_string($name) || ! is_subclass_of($name, OwnershipQueuedJob::class))) {
+            if (! array_key_exists('nvl_ownership', $data) && ! array_key_exists('nvl_tenancy', $data) && (! is_string($name) || ! is_subclass_of($name, OwnershipQueuedJob::class))) {
                 return;
             }
             if (! is_array($data['nvl_ownership'] ?? null) || array_key_exists('nvl_tenancy', $data)) {

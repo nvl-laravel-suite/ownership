@@ -11,6 +11,7 @@ use Nvl\Ownership\Contracts\OwnerSiteResolver;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 
 /**
  * Revalidates trusted site mappings and native owner availability at every public boundary.
@@ -31,6 +32,24 @@ final readonly class PublicOwnerSiteRunner
      * @return TResult
      */
     public function run(string $origin, Closure $callback): mixed
+    {
+        $site = $this->resolve($origin);
+
+        $snapshot = $this->container->make(OwnershipContext::class)->snapshot();
+        if ($snapshot->publicSite !== null) {
+            $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
+            if ($snapshot->publicSite != $site) {
+                throw new OwnershipViolation('Public admission cannot switch sites or capabilities.');
+            }
+
+            return $callback();
+        }
+
+        return $this->container->make(OwnershipRunner::class)->publicSite($site, $callback);
+    }
+
+    /** Resolve fresh canonical host capabilities without granting execution authority. @internal */
+    public function resolve(string $origin): VerifiedOwnerSiteContext
     {
         $origin = $this->canonicalOrigin($origin);
         if (! $this->container->bound(OwnerSiteResolver::class)) {
@@ -53,17 +72,7 @@ final readonly class PublicOwnerSiteRunner
             }
         }
 
-        $snapshot = $this->container->make(OwnershipContext::class)->snapshot();
-        if ($snapshot->publicSite !== null) {
-            $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
-            if ($snapshot->publicSite != $site) {
-                throw new OwnershipViolation('Public admission cannot switch sites or capabilities.');
-            }
-
-            return $callback();
-        }
-
-        return $this->container->make(OwnershipRunner::class)->publicSite($site, $callback);
+        return $site;
     }
 
     /** Normalize a complete HTTP origin without accepting credentials, paths or header bytes. */

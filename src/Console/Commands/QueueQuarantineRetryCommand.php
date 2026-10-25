@@ -20,7 +20,22 @@ final class QueueQuarantineRetryCommand extends Command
     /** Retry the selected native records and leave rejected or unsupported records available for inspection. */
     public function handle(OwnershipQueueQuarantine $quarantine): int
     {
-        foreach ($this->argument('id') as $id) {
+        $input = $this->argument('id');
+        if (! is_array($input) || ! array_is_list($input) || $input === []) {
+            $this->error('Native failed-job IDs must be a nonempty list of strings.');
+
+            return self::FAILURE;
+        }
+        $identifiers = [];
+        foreach ($input as $id) {
+            if (! is_string($id) || $id === '') {
+                $this->error('Native failed-job IDs must be a nonempty list of strings.');
+
+                return self::FAILURE;
+            }
+            $identifiers[] = $id;
+        }
+        foreach ($identifiers as $id) {
             try {
                 $quarantine->retry($id);
                 $this->info("Requeued raw NVL payload [{$id}].");

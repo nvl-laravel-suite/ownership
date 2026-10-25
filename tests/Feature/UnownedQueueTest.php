@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Nvl\Ownership\Contracts\OwnershipRunner as RunnerContract;
 use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
@@ -77,4 +78,20 @@ it('captures unowned native batch callbacks without allowing a batch to mix owne
     expect($stored->totalJobs)->toBe(1)->and(DB::table('jobs')->count())->toBe(1);
     $owned = app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), fn () => new UnownedProbeJob(OwnershipJobEnvelope::capture(app(OwnershipContext::class))));
     expect(fn () => $queue->captureBatch(Bus::batch([new UnownedProbeJob($envelope), $owned])))->toThrow(OwnershipViolation::class);
+});
+
+it('exposes explicit unowned execution through the injected runner contract and restores owner authority', function (): void {
+    expect((new ReflectionClass(RunnerContract::class))->hasMethod('unowned'))->toBeTrue();
+    $runner = app(RunnerContract::class);
+    $runner->run(Company::findOrFail(8), Actor::firstOrFail(), function () use ($runner): void {
+        $previous = app(OwnershipContext::class)->snapshot();
+        expect(fn () => $runner->unowned(function (): never {
+            expect(app(OwnershipContext::class)->snapshot()->mode)->toBe(OwnershipContextMode::Unresolved)
+                ->and(app(OwnershipContext::class)->snapshot()->owner)->toBeNull()
+                ->and(fn () => ColumnAsset::query()->count())->toThrow(OwnershipViolation::class);
+            throw new RuntimeException('explicit global callback failure');
+        }))->toThrow(RuntimeException::class, 'explicit global callback failure');
+        expect(app(OwnershipContext::class)->snapshot())->toBe($previous);
+    });
+    expect(app(OwnershipContext::class)->snapshot()->mode)->toBe(OwnershipContextMode::Unresolved);
 });
