@@ -8,7 +8,6 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Eloquent\Model;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
-use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
 /** Resolves only declared canonical owner models with native persisted identifiers. */
@@ -65,9 +64,7 @@ final readonly class OwnerIdentityResolver
             throw new OwnershipViolation;
         }
 
-        if ($owner->getConnection()->getSchemaBuilder()->hasTable(Tables::Stores)) {
-            $connection = $this->connections->identity($owner->getConnection());
-        }
+        $connection = $this->connections->optionalIdentity($owner->getConnection()) ?? $connection;
 
         return $connection.'.'.$owner->getTable();
     }

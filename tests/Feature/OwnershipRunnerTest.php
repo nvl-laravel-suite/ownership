@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+if (! in_array(dirname(__DIR__).'/Pest.php', get_included_files(), true)) {
+    uses('Nvl\\Ownership\\Tests\\OwnershipTestCase');
+}
+
 use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Contracts\CentralAccess;
 use Nvl\Ownership\Contracts\OwnershipRunner as RunnerContract;

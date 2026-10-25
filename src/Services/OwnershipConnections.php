@@ -43,8 +43,15 @@ final readonly class OwnershipConnections
     /** Require a preinstalled native store identity without creating one during admission. */
     public function identity(Connection $connection): string
     {
+        return $this->optionalIdentity($connection)
+            ?? throw new OwnershipSchemaNotReady('Install the ownership protocol on every participating connection.');
+    }
+
+    /** Read one fresh optional identity, distinguishing absence from corrupt installed storage. */
+    public function optionalIdentity(Connection $connection): ?string
+    {
         if (! $connection->getSchemaBuilder()->hasTable(Tables::Stores)) {
-            throw new OwnershipSchemaNotReady('Install the ownership protocol on every participating connection.');
+            return null;
         }
         $identity = $connection->table(Tables::Stores)->useWritePdo()->where('id', 1)->value('store_id');
         if (! is_string($identity) || ! Str::isUuid($identity)) {

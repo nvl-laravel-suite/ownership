@@ -203,16 +203,30 @@ final readonly class OwnershipDatabaseConstraints
     /** Confirm every required live database trigger exists on the actual source. */
     public function assertProtected(Connection $connection, string $table, bool $pivot = false): void
     {
+        $required = [];
         foreach (['insert' => 'valid', 'update' => 'immutable', ...($pivot ? ['delete' => 'primary'] : [])] as $event => $purpose) {
-            $name = $this->name($connection, $table, $event, $purpose);
-            $present = match ($connection->getDriverName()) {
-                'sqlite' => $connection->selectOne("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?", [$name], false),
-                'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $connection->getTablePrefix().$table], false),
-                'mysql', 'mariadb' => $connection->selectOne('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = ? AND EVENT_OBJECT_TABLE = ?', [$name, $connection->getTablePrefix().$table], false),
-                default => null,
-            };
-            if ($present === null) {
-                throw new OwnershipSchemaNotReady('An actual ownership immutability constraint is missing for ['.$table.'] ['.$event.':'.$purpose.'].');
+            $required[$this->name($connection, $table, $event, $purpose)] = $event.':'.$purpose;
+        }
+        $placeholders = implode(', ', array_fill(0, count($required), '?'));
+        $names = array_keys($required);
+        $physicalTable = $connection->getTablePrefix().$table;
+        $rows = match ($connection->getDriverName()) {
+            'sqlite' => $connection->select("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? AND name IN ({$placeholders})", [$physicalTable, ...$names], false),
+            'pgsql' => $connection->select("SELECT tgname AS name FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal AND tgname IN ({$placeholders})", [$physicalTable, ...$names], false),
+            'mysql', 'mariadb' => $connection->select("SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ? AND TRIGGER_NAME IN ({$placeholders})", [$physicalTable, ...$names], false),
+            default => [],
+        };
+        $present = [];
+        foreach ($rows as $row) {
+            $name = is_object($row) ? ($row->name ?? null) : null;
+            if (! is_string($name)) {
+                throw new OwnershipSchemaNotReady('The native ownership trigger catalog returned an invalid name.');
+            }
+            $present[$name] = true;
+        }
+        foreach ($required as $name => $identity) {
+            if (! isset($present[$name])) {
+                throw new OwnershipSchemaNotReady('An actual ownership immutability constraint is missing for ['.$table.'] ['.$identity.'].');
             }
         }
     }
