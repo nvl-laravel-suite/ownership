@@ -25,6 +25,7 @@ use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Ownership\ValueObjects\OwnershipVerification;
+use Nvl\Support\Ownership\Contracts\OwnershipBoundary;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
@@ -33,11 +34,6 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
-use Nvl\Support\Tenancy\Contracts\TenantBoundary;
-use Nvl\Support\Tenancy\Contracts\TenantRunner;
-use Nvl\Support\Tenancy\Services\TenantResourceRegistry;
-use Nvl\Support\Tenancy\ValueObjects\TenantId;
-use Nvl\Support\Tenancy\ValueObjects\TenantResourceDefinition;
 
 beforeEach(function (): void {
     if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
@@ -160,26 +156,31 @@ it('fences ordinary owner entry and queue publication inside every adapter callb
     expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('prepared');
 });
 
-it('admits a legacy mapping only within the matching freshly admitted owner generation', function (): void {
+it('requires fresh native owner admission after adoption and worker scope reset', function (): void {
     $this->allowOwners();
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
     {
         public function authorize(OwnershipOperation $operation): void {}
     });
-    $tenant = new TenantId('01954c28-56ec-7bda-9721-e5c05d7e1a54');
-    $mappings = array_map(fn (OwnershipMapping $mapping) => new OwnershipMapping($mapping->resource, $mapping->recordId, $mapping->owner, legacyTenantId: $tenant->value), $this->mappings);
     $coordinator = app(OwnershipAdoptionCoordinator::class);
-    $plan = $coordinator->prepare(['fixture', 'remote'], $mappings, $this->operation);
+    $plan = $coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
     $coordinator->backfill($plan, 100, $this->operation);
     $coordinator->activate($plan, $this->operation);
-    $legacy = app(TenantRunner::class);
-    expect(fn () => $legacy->run($tenant, fn () => true))->toThrow(OwnershipViolation::class);
+    $read = static function (): string {
+        $context = app(OwnershipContext::class);
+        $owner = $context->requireOwner();
+        app(OwnershipInstallationState::class)->assertSnapshot($context->snapshot());
+
+        return $owner->key;
+    };
+    expect(fn () => $read())->toThrow(OwnershipViolation::class);
     $actor = Actor::query()->firstOrFail();
-    expect(app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), $actor, fn () => $legacy->run($tenant, fn () => 'accepted')))->toBe('accepted');
-    expect(fn () => app(OwnershipRunner::class)->run(Company::query()->findOrFail(8), $actor, fn () => $legacy->run($tenant, fn () => true)))->toThrow(OwnershipViolation::class);
-    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), $actor, function () use ($legacy, $tenant, $actor): void {
+    expect(app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), $actor, $read))->toBe('7');
+    expect(app(OwnershipRunner::class)->run(Company::query()->findOrFail(8), $actor, $read))->toBe('8');
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), $actor, function () use ($actor, $read): void {
         app()->forgetScopedInstances();
-        expect(fn () => app(OwnershipRunner::class)->run(Company::query()->findOrFail(8), $actor, fn () => $legacy->run($tenant, fn () => true)))->toThrow(OwnershipViolation::class);
+        expect(fn () => $read())->toThrow(OwnershipViolation::class);
+        expect(app(OwnershipRunner::class)->run(Company::query()->findOrFail(8), $actor, $read))->toBe('8');
     });
 });
 
@@ -210,16 +211,15 @@ it('rejects reviewed mappings that name a missing physical source record', funct
         ->toThrow(OwnershipConfigurationInvalid::class);
 });
 
-it('fences legacy package entry during adoption even after a negative storage probe', function (): void {
-    app(TenantResourceRegistry::class)->register(new TenantResourceDefinition('fixture.records', 'fixture', Record::class));
-    $legacy = app(TenantBoundary::class);
-    expect($legacy->key('fixture.records', 'baseline'))->toBe('baseline');
+it('fences native package entry during adoption after an unadopted storage probe', function (): void {
+    app(PersistedOwnershipStorage::class)->assertUnadopted(DB::connection(), 'fixture.records', 'ownership_test_records');
+    $boundary = app(OwnershipBoundary::class);
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
     {
         public function authorize(OwnershipOperation $operation): void {}
     });
-    config(['ownership_test.callback' => function () use ($legacy): void {
-        expect(fn () => $legacy->key('fixture.records', 'escaped'))->toThrow(OwnershipViolation::class);
+    config(['ownership_test.callback' => function () use ($boundary): void {
+        expect(fn () => $boundary->key('fixture.records', 'escaped'))->toThrow(OwnershipViolation::class);
     }]);
     app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
 });

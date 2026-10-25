@@ -6,7 +6,6 @@ namespace Nvl\Ownership\Services;
 
 use Closure;
 use Illuminate\Container\Container;
-use Illuminate\Http\Request;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Contracts\OwnerSiteResolver;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
@@ -31,13 +30,14 @@ final readonly class PublicOwnerSiteRunner
      * @param  Closure(): TResult  $callback
      * @return TResult
      */
-    public function run(Request $request, Closure $callback): mixed
+    public function run(string $origin, Closure $callback): mixed
     {
+        $origin = $this->canonicalOrigin($origin);
         if (! $this->container->bound(OwnerSiteResolver::class)) {
             throw new OwnershipViolation('No public owner site resolver is configured.');
         }
-        $site = $this->container->make(OwnerSiteResolver::class)->resolve($request);
-        if ($site === null || $site->canonicalOrigin !== $request->getSchemeAndHttpHost()) {
+        $site = $this->container->make(OwnerSiteResolver::class)->resolve($origin);
+        if ($site === null || $site->canonicalOrigin !== $origin) {
             throw new OwnershipViolation('The request does not match an admitted canonical site origin.');
         }
         $this->container->make(OwnershipConfiguration::class)->assertReady();
@@ -64,5 +64,22 @@ final readonly class PublicOwnerSiteRunner
         }
 
         return $this->container->make(OwnershipRunner::class)->publicSite($site, $callback);
+    }
+
+    /** Normalize a complete HTTP origin without accepting credentials, paths or header bytes. */
+    private function canonicalOrigin(string $origin): string
+    {
+        $parts = parse_url($origin);
+        if (preg_match('/[\x00-\x20\x7f]/', $origin) === 1
+            || ! is_array($parts)
+            || ! isset($parts['scheme'], $parts['host'])
+            || ! in_array(strtolower($parts['scheme']), ['http', 'https'], true)
+            || array_diff(array_keys($parts), ['scheme', 'host', 'port']) !== []
+            || filter_var($origin, FILTER_VALIDATE_URL) === false) {
+            throw new OwnershipViolation('Public admission requires a canonical HTTP origin.');
+        }
+
+        return strtolower($parts['scheme']).'://'.strtolower($parts['host'])
+            .(isset($parts['port']) ? ':'.$parts['port'] : '');
     }
 }

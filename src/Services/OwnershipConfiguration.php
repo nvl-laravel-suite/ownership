@@ -6,7 +6,6 @@ namespace Nvl\Ownership\Services;
 
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Events\TransactionCommitting;
-use Nvl\Ownership\Compatibility\LegacyResourceReadiness;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
@@ -15,7 +14,7 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 final readonly class OwnershipConfiguration
 {
     /** Retain configuration and resource declarations only. */
-    public function __construct(private Repository $configuration, private OwnershipResourceRegistry $resources, private LegacyResourceReadiness $readiness) {}
+    public function __construct(private Repository $configuration, private OwnershipResourceRegistry $resources, private OwnershipIntegrationReadiness $readiness) {}
 
     /** Deny simultaneous authorities and malformed runtime switches. */
     public function validate(): void

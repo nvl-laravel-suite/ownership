@@ -110,16 +110,6 @@
             "properties": [],
             "constants": []
         },
-        "Nvl\\Ownership\\Http\\Middleware\\ResolvePublicOwnerSite": {
-            "kind": "class",
-            "file": "src/Http/Middleware/ResolvePublicOwnerSite.php",
-            "methods": [
-                "__construct",
-                "handle"
-            ],
-            "properties": [],
-            "constants": []
-        },
         "Nvl\\Ownership\\Services\\FreshHostOwnershipAdoptionAdapter": {
             "kind": "class",
             "file": "src/Services/FreshHostOwnershipAdoptionAdapter.php",

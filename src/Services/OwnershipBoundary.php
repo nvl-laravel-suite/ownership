@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Support\OwnerRegistry;
-use Nvl\Support\Ownership\Compatibility\LegacyOwnershipBoundary;
 use Nvl\Support\Ownership\Contracts\OwnershipBoundary as BoundaryContract;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
@@ -20,10 +19,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipIdentityFields;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
+use Nvl\Support\Ownership\Services\UnownedOwnershipBoundary;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
-use Nvl\Support\Tenancy\Services\PersistedTenantStorage;
 
 /**
  * Intersects package queries and writes with admitted canonical persisted ownership.
@@ -44,7 +44,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
         $definition = $this->resources()->get($resource);
         $this->container->make(OwnershipRecordReader::class)->assertModel($query->getModel(), $definition);
         if (! $this->enabled()) {
-            return $this->container->make(LegacyOwnershipBoundary::class)->query($query, $resource);
+            return $this->container->make(UnownedOwnershipBoundary::class)->query($query, $resource);
         }
         $base = $query->getQuery();
         if ($base->from !== $query->getModel()->getTable() || $base->getConnection() !== $query->getModel()->getConnection() || $base->unions !== null) {
@@ -65,7 +65,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
         $definition = $this->resources()->get($resource);
         $this->container->make(OwnershipRecordReader::class)->assertModel($record, $definition);
         if (! $this->enabled()) {
-            $this->container->make(LegacyOwnershipBoundary::class)->assertRecord($record, $resource);
+            $this->container->make(UnownedOwnershipBoundary::class)->assertRecord($record, $resource);
 
             return;
         }
@@ -95,7 +95,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
     public function attributes(string $resource): array
     {
         if (! $this->enabled()) {
-            return $this->container->make(LegacyOwnershipBoundary::class)->attributes($resource);
+            return $this->container->make(UnownedOwnershipBoundary::class)->attributes($resource);
         }
         $definition = $this->resources()->get($resource);
         $snapshot = $this->admit($definition);
@@ -116,7 +116,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
     public function key(string $resource, string $identity): string
     {
         if (! $this->enabled()) {
-            return $this->container->make(LegacyOwnershipBoundary::class)->key($resource, $identity);
+            return $this->container->make(UnownedOwnershipBoundary::class)->key($resource, $identity);
         }
         $snapshot = $this->admit($this->resources()->get($resource));
 
@@ -159,7 +159,8 @@ final readonly class OwnershipBoundary implements BoundaryContract
             throw new OwnershipViolation('The resource is outside the admitted public site graph.');
         }
         if ($resource->ownership->strategy === 'unscoped') {
-            $this->container->make(PersistedTenantStorage::class)->assertUnadopted((new $resource->model)->getConnection(), $resource->key);
+            $model = new $resource->model;
+            $this->container->make(PersistedOwnershipStorage::class)->assertUnadopted($model->getConnection(), $resource->key, $model->getTable());
 
             return null;
         }

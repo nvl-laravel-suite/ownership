@@ -15,7 +15,6 @@ use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
-use Nvl\Support\Tenancy\Exceptions\TenantBoundaryViolation;
 
 beforeEach(function (): void {
     $this->allowOwners();
@@ -82,7 +81,7 @@ it('raw retries ordinary captured failures without eager native model restoratio
     $payload = ownershipProbePayload(ColumnAsset::withoutGlobalScopes()->findOrFail(1));
     $id = app('queue.failer')->log('database', 'default', $payload, new RuntimeException('ordinary business failure'));
     ProbeJob::$observations = [];
-    expect(fn () => Artisan::call('queue:retry', ['id' => [$id]]))->toThrow(TenantBoundaryViolation::class, 'nvl:queue:retry');
+    expect(fn () => Artisan::call('queue:retry', ['id' => [$id]]))->toThrow(OwnershipViolation::class, 'nvl:queue:retry');
     expect(ProbeJob::$observations)->toBe([]);
     expect(Artisan::call('nvl:queue:retry', ['id' => [$id]]))->toBe(0);
     expect(ProbeJob::$observations)->toBe([])->and(DB::table('jobs')->value('payload'))->toBe($payload);

@@ -2,17 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Nvl\Ownership\Compatibility;
+namespace Nvl\Ownership\Services;
 
 use Illuminate\Foundation\Application;
 use Nvl\Support\Ownership\Contracts\OwnershipIntegratedProvider;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
-use Nvl\Support\Tenancy\Services\TenantResourceRegistry;
 use ReflectionClass;
 
-/** Rejects incomplete legacy integration graphs during the incremental replacement. */
-final readonly class LegacyResourceReadiness
+/** Requires native ownership integration from each loaded domain provider. */
+final readonly class OwnershipIntegrationReadiness
 {
     /** @var array<string, string> */
     private const array PROVIDERS = [
@@ -38,13 +37,13 @@ final readonly class LegacyResourceReadiness
     ];
 
     /** Retain framework metadata without retaining scoped principals or models. */
-    public function __construct(private Application $application, private TenantResourceRegistry $legacy, private OwnershipResourceRegistry $resources) {}
+    public function __construct(private Application $application, private OwnershipResourceRegistry $resources) {}
 
     /** Require code-owned integration and complete registered resource coverage. */
     public function assertReady(): void
     {
         $loaded = $this->application->getLoadedProviders();
-        $definitions = $this->resources->all();
+        $this->resources->freeze();
         foreach (self::PROVIDERS as $provider => $package) {
             if (($loaded[$provider] ?? false) !== true) {
                 continue;
@@ -52,11 +51,7 @@ final readonly class LegacyResourceReadiness
             if (! (new ReflectionClass($provider))->implementsInterface(OwnershipIntegratedProvider::class)) {
                 throw new OwnershipConfigurationInvalid('A loaded package has not implemented ownership integration: '.$package);
             }
-            foreach ($this->legacy->all() as $resource) {
-                if (str_starts_with($resource->key, $package.'.') && ! isset($definitions[$resource->key])) {
-                    throw new OwnershipConfigurationInvalid('A package ownership resource graph is incomplete: '.$package);
-                }
-            }
+
         }
     }
 }

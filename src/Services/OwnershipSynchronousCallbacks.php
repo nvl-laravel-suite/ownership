@@ -7,8 +7,8 @@ namespace Nvl\Ownership\Services;
 use Closure;
 use Illuminate\Bus\Dispatcher as NativeDispatcher;
 use Illuminate\Contracts\Bus\Dispatcher as DispatcherContract;
+use Nvl\Ownership\Queue\OwnershipBusDispatcher;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
-use Nvl\Support\Ownership\Services\OwnershipBusDispatcher;
 use ReflectionProperty;
 
 /** Preserves native host response scheduling while synchronous privileged callbacks are fenced. @internal */

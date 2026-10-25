@@ -14,7 +14,6 @@ use Nvl\Support\Ownership\Contracts\OwnershipQueueContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
-use Nvl\Support\Ownership\Services\OwnershipBatchRepository;
 use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use ReflectionProperty;

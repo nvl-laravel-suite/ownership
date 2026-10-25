@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Contracts;
 
-use Illuminate\Http\Request;
 use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 
 /**
@@ -15,6 +14,6 @@ use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
  */
 interface OwnerSiteResolver
 {
-    /** Resolve an exact admitted request origin, or deny unknown/disabled sites. */
-    public function resolve(Request $request): ?VerifiedOwnerSiteContext;
+    /** Resolve an exact canonical origin from persisted enabled host mappings. */
+    public function resolve(string $origin): ?VerifiedOwnerSiteContext;
 }

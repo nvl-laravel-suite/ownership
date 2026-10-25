@@ -13,8 +13,8 @@ use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Contracts\OwnershipModelGuard;
 use Nvl\Support\Ownership\Contracts\OwnershipModelPersistence as PersistenceContract;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
-use Nvl\Support\Ownership\Services\LegacyOwnershipModelPersistence;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\UnownedOwnershipModelPersistence;
 
 /** Holds canonical locks through all native model events and the actual SQL write. @internal */
 final readonly class OwnershipModelPersistence implements PersistenceContract
@@ -33,7 +33,7 @@ final readonly class OwnershipModelPersistence implements PersistenceContract
             }
         }
         if (! $this->owned($model)) {
-            return $this->container->make(LegacyOwnershipModelPersistence::class)->save($model, $persist);
+            return $this->container->make(UnownedOwnershipModelPersistence::class)->save($model, $persist);
         }
         $resource = $this->container->make(OwnershipResourceRegistry::class)->forModel($model);
         if (! $model->exists && $resource->ownership->strategy === 'captured'
@@ -79,7 +79,7 @@ final readonly class OwnershipModelPersistence implements PersistenceContract
             }
         }
         if (! $this->owned($model)) {
-            return $this->container->make(LegacyOwnershipModelPersistence::class)->delete($model, $persist);
+            return $this->container->make(UnownedOwnershipModelPersistence::class)->delete($model, $persist);
         }
 
         return $model->getConnection()->transaction(function () use ($model, $persist): ?bool {

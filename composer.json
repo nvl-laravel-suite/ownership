@@ -13,17 +13,15 @@
         "ext-filter": "*",
         "ext-mbstring": "*",
         "ext-pdo": "*",
-        "laravel/framework": "^12.0 || ^13.0",
+        "laravel/framework": "^13.0",
         "nvl/core": "^6.0",
-        "php": "^8.4",
-        "symfony/http-foundation": "^7.2 || ^8.0",
-        "symfony/http-kernel": "^7.2 || ^8.0"
+        "php": "^8.4"
     },
     "require-dev": {
         "larastan/larastan": "^3.10",
         "laravel/pint": "^1.27",
         "mockery/mockery": "^1.6",
-        "orchestra/testbench": "^10.0 || ^11.0",
+        "orchestra/testbench": "^11.0",
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",
         "symfony/process": "^7.2 || ^8.0",

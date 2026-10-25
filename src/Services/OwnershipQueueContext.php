@@ -15,9 +15,9 @@ use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
-use Nvl\Support\Tenancy\Services\PersistedTenantStorage;
 
 /** Re-admits scalar capture against fresh worker policies, actors, owners, and generations. @internal */
 final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Contracts\OwnershipQueueContext
@@ -75,7 +75,10 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
                     throw new OwnershipViolation('Disabled work cannot enter an owned deployment.');
                 }
             }
-            $this->container->make(PersistedTenantStorage::class)->assertQueueUsable();
+            foreach ($this->container->make(OwnershipResourceRegistry::class)->all() as $resource) {
+                $model = new $resource->model;
+                $this->container->make(PersistedOwnershipStorage::class)->assertUnadopted($model->getConnection(), $resource->key, $model->getTable());
+            }
             $context = $this->container->make(ScopedOwnershipContext::class);
             $previous = $context->snapshot();
             $context->replace(new OwnershipSnapshot(OwnershipContextMode::Disabled));
