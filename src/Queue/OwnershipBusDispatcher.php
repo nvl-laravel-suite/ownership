@@ -10,7 +10,11 @@ use Nvl\Support\Ownership\Contracts\OwnershipQueueContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 
-/** Preserves native bus algorithms and host pipes while honoring explicit scheduling capture. @internal */
+/**
+ * Preserves native bus algorithms and host pipes while honoring explicit scheduling capture.
+ *
+ * @internal
+ */
 class OwnershipBusDispatcher extends Dispatcher
 {
     /** Preserve the exact native dispatcher configuration without replacing host adapters. */

@@ -18,7 +18,11 @@ use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use ReflectionProperty;
 
-/** Preserves native batch algorithms while validating callback ownership before deserialization. @internal */
+/**
+ * Preserves native batch algorithms while validating callback ownership before deserialization.
+ *
+ * @internal
+ */
 class OwnershipDatabaseBatchRepository extends OwnershipBatchRepository
 {
     /** Adapt only the exact native implementation, retaining its effective storage and factory. */

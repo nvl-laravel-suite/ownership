@@ -10,7 +10,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Validates explicit runtime authority and immutable resource graph completeness. */
+/**
+ * Validates explicit runtime authority and immutable resource graph completeness.
+ *
+ * @internal
+ */
 final readonly class OwnershipConfiguration
 {
     /** Retain configuration and resource declarations only. */

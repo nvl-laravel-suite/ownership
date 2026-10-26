@@ -12,7 +12,11 @@ use PDO;
 use ReflectionProperty;
 use WeakMap;
 
-/** Serializes adoption across processes without wrapping DDL or audits in a transaction. @internal */
+/**
+ * Serializes adoption across processes without wrapping DDL or audits in a transaction.
+ *
+ * @internal
+ */
 final class OwnershipAdoptionLock
 {
     /** @var WeakMap<Connection, true>|null */

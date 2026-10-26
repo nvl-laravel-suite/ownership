@@ -9,7 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 use Nvl\Ownership\Contracts\OwnerAccess;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** Supplies default-denying entry policies without an Auth dependency. */
+/**
+ * Supplies default-denying entry policies without an Auth dependency.
+ *
+ * @internal
+ */
 final readonly class DenyOwnerAccess implements OwnerAccess
 {
     /** Deny owner entry without an explicit host policy. */

@@ -10,7 +10,11 @@ use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
-/** Resolves only declared canonical owner models with native persisted identifiers. */
+/**
+ * Resolves only declared canonical owner models with native persisted identifiers.
+ *
+ * @api
+ */
 final readonly class OwnerIdentityResolver
 {
     /** Retain identity metadata without caching owners or queries. */

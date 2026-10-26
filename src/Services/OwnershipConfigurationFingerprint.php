@@ -10,7 +10,11 @@ use Nvl\Ownership\Contracts\OwnershipActorResolver;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Binds immutable adoption input to configured classes, morphs and actual stores. @internal */
+/**
+ * Binds immutable adoption input to configured classes, morphs and actual stores.
+ *
+ * @internal
+ */
 final readonly class OwnershipConfigurationFingerprint
 {
     /** Retain only declaration and storage services. */

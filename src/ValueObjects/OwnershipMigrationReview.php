@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\ValueObjects;
 
-/** Reviewed deployment input; the document and audit actor grant no authorization.
+/**
+ * Reviewed deployment input; the document and audit actor grant no authorization.
  *
  * @api
  */

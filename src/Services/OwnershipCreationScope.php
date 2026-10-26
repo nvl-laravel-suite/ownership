@@ -8,7 +8,11 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** Permits exactly one concrete new root per nested writer invocation. @internal */
+/**
+ * Permits exactly one concrete new root per nested writer invocation.
+ *
+ * @internal
+ */
 final class OwnershipCreationScope
 {
     /** @var list<array{class: class-string<Model>, attributes: array<string, int|string|null>, record: Model|null}> */

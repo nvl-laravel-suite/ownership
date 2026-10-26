@@ -12,7 +12,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Shared partition DDL invoked explicitly by each package's adoption adapter. @internal */
+/**
+ * Shared partition DDL invoked explicitly by each package's adoption adapter.
+ *
+ * @internal
+ */
 final readonly class OwnershipSchema
 {
     /** Compose canonical storage verification and maintenance-only native constraints. */

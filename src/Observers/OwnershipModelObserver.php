@@ -16,7 +16,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\DisabledOwnershipModelGuard;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Validates model persistence through declared dependencies and canonical storage. @internal */
+/**
+ * Validates model persistence through declared dependencies and canonical storage.
+ *
+ * @internal
+ */
 final readonly class OwnershipModelObserver implements OwnershipModelGuard
 {
     /** Resolve scoped services at each native persistence boundary. */

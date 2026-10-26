@@ -26,7 +26,11 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 use Throwable;
 
-/** Admits work and restores state without retaining an old request's adapters. */
+/**
+ * Admits work and restores state without retaining an old request's adapters.
+ *
+ * @internal
+ */
 final readonly class OwnershipRunner implements RunnerContract
 {
     /** Resolve lifecycle-scoped adapters at the framework execution boundary. */

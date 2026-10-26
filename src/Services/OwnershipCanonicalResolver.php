@@ -9,7 +9,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Reconstructs complete ownership facts and validates their redundant index partition. @internal */
+/**
+ * Reconstructs complete ownership facts and validates their redundant index partition.
+ *
+ * @internal
+ */
 final readonly class OwnershipCanonicalResolver
 {
     /** Compose focused persistence resolvers. */

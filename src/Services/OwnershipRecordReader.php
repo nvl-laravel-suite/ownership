@@ -10,7 +10,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 use stdClass;
 
-/** Reads exact persisted storage without model scopes or loaded relationship caches. @internal */
+/**
+ * Reads exact persisted storage without model scopes or loaded relationship caches.
+ *
+ * @internal
+ */
 final readonly class OwnershipRecordReader
 {
     /** Require the registered concrete class, native key, table and actual connection. */

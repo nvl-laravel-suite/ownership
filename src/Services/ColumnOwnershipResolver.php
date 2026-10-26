@@ -11,7 +11,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Resolves native column ownership through the declared canonical owner model. @internal */
+/**
+ * Resolves native column ownership through the declared canonical owner model.
+ *
+ * @internal
+ */
 final readonly class ColumnOwnershipResolver
 {
     /** Retain identity services without caching owners or current context. */

@@ -12,7 +12,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use SplObjectStorage;
 
-/** Validates supported restored model captures without retaining a request or job graph. @internal */
+/**
+ * Validates supported restored model captures without retaining a request or job graph.
+ *
+ * @internal
+ */
 final readonly class OwnershipCapturedModels
 {
     /** Resolve current canonical resource boundaries. */

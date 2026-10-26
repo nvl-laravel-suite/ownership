@@ -16,7 +16,11 @@ use Nvl\Support\Ownership\Services\OwnershipQueueQuarantine;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Throwable;
 
-/** Admits raw wire metadata before Laravel restores execution or terminal failure commands. @internal */
+/**
+ * Admits raw wire metadata before Laravel restores execution or terminal failure commands.
+ *
+ * @internal
+ */
 final readonly class OwnershipQueueAdmission
 {
     /** Resolve only the current worker's services. */

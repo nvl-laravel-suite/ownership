@@ -11,7 +11,11 @@ use Nvl\Ownership\Queue\OwnershipBusDispatcher;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use ReflectionProperty;
 
-/** Preserves native host response scheduling while synchronous privileged callbacks are fenced. @internal */
+/**
+ * Preserves native host response scheduling while synchronous privileged callbacks are fenced.
+ *
+ * @internal
+ */
 final readonly class OwnershipSynchronousCallbacks
 {
     /**

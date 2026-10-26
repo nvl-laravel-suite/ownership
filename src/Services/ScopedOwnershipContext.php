@@ -11,7 +11,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
-/** Holds mutable ownership only within one framework request or job lifecycle. */
+/**
+ * Holds mutable ownership only within one framework request or job lifecycle.
+ *
+ * @internal
+ */
 final class ScopedOwnershipContext implements OwnershipContext
 {
     private OwnershipSnapshot $current;
@@ -41,7 +45,9 @@ final class ScopedOwnershipContext implements OwnershipContext
         return $this->current->owner;
     }
 
-    /** @internal Replace state through authorized execution boundaries only. */
+    /**
+     * @internal Replace state through authorized execution boundaries only.
+     */
     public function replace(OwnershipSnapshot $next): void
     {
         if ($this->invalid) {
@@ -50,14 +56,18 @@ final class ScopedOwnershipContext implements OwnershipContext
         $this->current = $next;
     }
 
-    /** @internal Revoke a scope after failed cleanup. */
+    /**
+     * @internal Revoke a scope after failed cleanup.
+     */
     public function invalidate(): void
     {
         $this->invalid = true;
         $this->current = new OwnershipSnapshot(OwnershipContextMode::Unresolved);
     }
 
-    /** @internal Report whether failed cleanup revoked the current lifecycle. */
+    /**
+     * @internal Report whether failed cleanup revoked the current lifecycle.
+     */
     public function invalid(): bool
     {
         return $this->invalid;

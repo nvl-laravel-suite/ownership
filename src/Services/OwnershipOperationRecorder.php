@@ -11,7 +11,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
-/** Persists authorized facts before any privileged callback. @internal */
+/**
+ * Persists authorized facts before any privileged callback.
+ *
+ * @internal
+ */
 final readonly class OwnershipOperationRecorder
 {
     /** Resolve the live coordinator connection. */

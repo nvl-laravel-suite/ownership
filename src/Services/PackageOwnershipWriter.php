@@ -9,7 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 use Nvl\Ownership\ValueObjects\OwnershipAssignment;
 use Nvl\Support\Ownership\Contracts\OwnershipWriter as WriterContract;
 
-/** Adapts package-neutral creation to the public optional runtime writer. @internal */
+/**
+ * Adapts package-neutral creation to the public optional runtime writer.
+ *
+ * @internal
+ */
 final readonly class PackageOwnershipWriter implements WriterContract
 {
     /** Preserve the existing Runtime Writer and Assignment consumer APIs. */

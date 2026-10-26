@@ -10,7 +10,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use ReflectionClass;
 
-/** Requires native ownership integration from each loaded domain provider. */
+/**
+ * Requires native ownership integration from each loaded domain provider.
+ *
+ * @internal
+ */
 final readonly class OwnershipIntegrationReadiness
 {
     /** @var array<string, string> */

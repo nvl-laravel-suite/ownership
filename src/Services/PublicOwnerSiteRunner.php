@@ -48,7 +48,11 @@ final readonly class PublicOwnerSiteRunner
         return $this->container->make(OwnershipRunner::class)->publicSite($site, $callback);
     }
 
-    /** Resolve fresh canonical host capabilities without granting execution authority. @internal */
+    /**
+     * Resolve fresh canonical host capabilities without granting execution authority.
+     *
+     * @internal
+     */
     public function resolve(string $origin): VerifiedOwnerSiteContext
     {
         $origin = $this->canonicalOrigin($origin);

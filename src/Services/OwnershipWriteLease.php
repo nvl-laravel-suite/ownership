@@ -15,7 +15,11 @@ use ReflectionProperty;
 use Throwable;
 use WeakMap;
 
-/** Pins native SQL writes to the actual source session until canonical verification completes. @internal */
+/**
+ * Pins native SQL writes to the actual source session until canonical verification completes.
+ *
+ * @internal
+ */
 final class OwnershipWriteLease
 {
     /** @var WeakMap<Connection, true>|null */

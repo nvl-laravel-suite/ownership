@@ -9,7 +9,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Resolves retained operational facts without requiring a surviving business subject. @internal */
+/**
+ * Resolves retained operational facts without requiring a surviving business subject.
+ *
+ * @internal
+ */
 final readonly class CapturedOwnershipResolver
 {
     /** Revalidate the complete scalar reference through the declared host identity registry. */

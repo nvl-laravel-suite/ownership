@@ -9,7 +9,11 @@ use Illuminate\Support\Str;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 
-/** Shared input validation for migration phases; CLI facts never authorize a cutover. @internal */
+/**
+ * Shared input validation for migration phases; CLI facts never authorize a cutover.
+ *
+ * @internal
+ */
 abstract class OwnershipMigrationCommand extends Command
 {
     /** Require a deliberate immutable plan identifier. */

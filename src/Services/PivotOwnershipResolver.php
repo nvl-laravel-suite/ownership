@@ -10,7 +10,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Resolves a single concrete primary-owner row independently of loaded pivots. @internal */
+/**
+ * Resolves a single concrete primary-owner row independently of loaded pivots.
+ *
+ * @internal
+ */
 final readonly class PivotOwnershipResolver
 {
     /** Reuse canonical native-key validation. */

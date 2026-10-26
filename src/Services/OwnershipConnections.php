@@ -14,7 +14,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 
-/** Resolves actual source sessions and durable store identities. @internal */
+/**
+ * Resolves actual source sessions and durable store identities.
+ *
+ * @internal
+ */
 final readonly class OwnershipConnections
 {
     /** Retain connection services and immutable declarations. */

@@ -13,7 +13,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use stdClass;
 
-/** Applies reviewed assignments in bounded native resource pages without changing package verification. @internal */
+/**
+ * Applies reviewed assignments in bounded native resource pages without changing package verification.
+ *
+ * @internal
+ */
 final readonly class OwnershipResourceBackfill
 {
     /** Retain canonical resource metadata and immutable reviewed mappings. */

@@ -26,7 +26,11 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 use Throwable;
 
-/** Inspects native PHP payload data without instantiating command or model classes. @internal */
+/**
+ * Inspects native PHP payload data without instantiating command or model classes.
+ *
+ * @internal
+ */
 final readonly class OwnershipQueueCommand
 {
     /** Resolve ownership services from the current worker scope. */
@@ -212,7 +216,11 @@ final readonly class OwnershipQueueCommand
         return false;
     }
 
-    /** Decode and inspect native batch options without executing callbacks. @internal */
+    /**
+     * Decode and inspect native batch options without executing callbacks.
+     *
+     * @internal
+     */
     public function batchEnvelope(string $serialized): OwnershipJobEnvelope
     {
         $options = $this->decode($serialized);

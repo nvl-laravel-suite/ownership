@@ -13,7 +13,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Independently compares every physical cutover record with its reviewed canonical owner. @internal */
+/**
+ * Independently compares every physical cutover record with its reviewed canonical owner.
+ *
+ * @internal
+ */
 final readonly class OwnershipAdoptionConservation
 {
     /** Retain immutable reviewed mappings and exact canonical source readers. */

@@ -16,7 +16,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\UnownedOwnershipModelPersistence;
 
-/** Holds canonical locks through all native model events and the actual SQL write. @internal */
+/**
+ * Holds canonical locks through all native model events and the actual SQL write.
+ *
+ * @internal
+ */
 final readonly class OwnershipModelPersistence implements PersistenceContract
 {
     /** Resolve current guards rather than retaining scoped admission. */

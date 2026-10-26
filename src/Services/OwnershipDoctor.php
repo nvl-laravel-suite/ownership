@@ -9,7 +9,11 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Throwable;
 
-/** Read-only deployment and actual-storage checks. @internal */
+/**
+ * Read-only deployment and actual-storage checks.
+ *
+ * @internal
+ */
 final readonly class OwnershipDoctor
 {
     /** Resolve declarations lazily, after application registration. */

@@ -19,7 +19,11 @@ use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
-/** Re-admits scalar capture against fresh worker policies, actors, owners, and generations. @internal */
+/**
+ * Re-admits scalar capture against fresh worker policies, actors, owners, and generations.
+ *
+ * @internal
+ */
 final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Contracts\OwnershipQueueContext
 {
     /** Retain only the current application, never a captured request adapter. */

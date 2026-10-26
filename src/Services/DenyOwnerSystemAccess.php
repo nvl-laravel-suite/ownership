@@ -8,7 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Nvl\Ownership\Contracts\OwnerSystemAccess;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** Denies privileged owner operations without a focused host system policy. */
+/**
+ * Denies privileged owner operations without a focused host system policy.
+ *
+ * @internal
+ */
 final readonly class DenyOwnerSystemAccess implements OwnerSystemAccess
 {
     /** Deny implicit or unconfigured system authority. */

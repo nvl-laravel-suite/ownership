@@ -9,7 +9,11 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
-/** Rechecks source stamps against the committed coordinator generation. @internal */
+/**
+ * Rechecks source stamps against the committed coordinator generation.
+ *
+ * @internal
+ */
 final readonly class OwnershipInstallationState
 {
     /** Retain no persisted state or negative readiness cache. */

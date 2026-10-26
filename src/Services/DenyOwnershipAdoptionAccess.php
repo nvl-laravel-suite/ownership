@@ -8,7 +8,11 @@ use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** No audit fact or CLI entry grants adoption authority implicitly. @internal */
+/**
+ * No audit fact or CLI entry grants adoption authority implicitly.
+ *
+ * @internal
+ */
 final readonly class DenyOwnershipAdoptionAccess implements OwnershipAdoptionAccess
 {
     /** Require an explicit host authorization adapter. */

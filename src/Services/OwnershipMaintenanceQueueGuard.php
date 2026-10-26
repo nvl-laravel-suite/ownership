@@ -14,7 +14,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 
-/** Fences maintenance publication without retaining an application in static hooks. @internal */
+/**
+ * Fences maintenance publication without retaining an application in static hooks.
+ *
+ * @internal
+ */
 abstract class OwnershipMaintenanceQueueGuard extends Queue
 {
     /** Install one named callback while preserving host hooks. */

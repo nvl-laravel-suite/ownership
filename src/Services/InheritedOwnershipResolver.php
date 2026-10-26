@@ -15,7 +15,11 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Reads the package-approved persisted parent independently of loaded relations. @internal */
+/**
+ * Reads the package-approved persisted parent independently of loaded relations.
+ *
+ * @internal
+ */
 final readonly class InheritedOwnershipResolver
 {
     /** Resolve graph recursion without retaining a scoped owner or parent. */

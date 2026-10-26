@@ -8,7 +8,11 @@ use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Database\Grammar;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 
-/** A grammar-wrapped native identifier comparison without numeric coercion. @internal */
+/**
+ * A grammar-wrapped native identifier comparison without numeric coercion.
+ *
+ * @internal
+ */
 final readonly class OwnershipTextColumn implements Expression
 {
     /** Accept structured canonical identifiers, never caller SQL. */

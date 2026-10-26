@@ -9,7 +9,11 @@ use Nvl\Ownership\Contracts\OwnershipActorResolver;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** Reloads explicitly registered native host actors on their primary source. @internal */
+/**
+ * Reloads explicitly registered native host actors on their primary source.
+ *
+ * @internal
+ */
 final readonly class NativeOwnershipActorResolver implements OwnershipActorResolver
 {
     /** Use the single host model identity registry. */

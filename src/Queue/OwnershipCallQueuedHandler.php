@@ -19,7 +19,11 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
-/** Restores the boundary before Laravel deserializes either execution or failure commands. @internal */
+/**
+ * Restores the boundary before Laravel deserializes either execution or failure commands.
+ *
+ * @internal
+ */
 class OwnershipCallQueuedHandler extends CallQueuedHandler implements OwnershipQueueHandler
 {
     /** Identify a handler that explicitly implements both metadata admission boundaries. */

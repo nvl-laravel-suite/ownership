@@ -13,7 +13,11 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use ReflectionProperty;
 
-/** Retains a raw callback boundary even after the optional runtime is removed. @internal */
+/**
+ * Retains a raw callback boundary even after the optional runtime is removed.
+ *
+ * @internal
+ */
 class OwnershipBatchRepository extends DatabaseBatchRepository
 {
     /** Preserve the installed native factory, table and actual source connection. */

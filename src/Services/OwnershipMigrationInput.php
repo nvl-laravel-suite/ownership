@@ -13,7 +13,8 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 
-/** Imports bounded explicit mappings and compares reviewed deployment identities without writing storage.
+/**
+ * Imports bounded explicit mappings and compares reviewed deployment identities without writing storage.
  *
  * @internal
  *

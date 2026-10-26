@@ -7,7 +7,11 @@ namespace Nvl\Ownership\Services;
 use Nvl\Support\Ownership\Contracts\OwnershipReadiness as ReadinessContract;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 
-/** Checks storage readiness without changing execution authority. @internal */
+/**
+ * Checks storage readiness without changing execution authority.
+ *
+ * @internal
+ */
 final readonly class OwnershipReadiness implements ReadinessContract
 {
     /** Read fresh installation facts rather than a cached bootstrap result. */

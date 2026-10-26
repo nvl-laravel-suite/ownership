@@ -8,7 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
-/** Admits fresh existing owners while host lifecycle rules remain replaceable. */
+/**
+ * Admits fresh existing owners while host lifecycle rules remain replaceable.
+ *
+ * @internal
+ */
 final readonly class ExistingOwnerAvailability implements OwnerAvailability
 {
     /** Reject missing and soft-deleted canonical owners. */
