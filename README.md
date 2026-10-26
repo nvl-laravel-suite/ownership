@@ -4,13 +4,13 @@
 
 ## Quickstart
 
-Version 6.0.0 is published on Packagist. An ordinary unowned host does not need
+NVL Light uses the coordinated 7.x package line. An ordinary unowned host does not need
 this package. For isolated Media,
 install the selected packages, keep the runtime disabled, and follow the model,
 admission and adoption sections below before enabling traffic:
 
 ```sh
-composer require nvl/ownership:^6.0 nvl/media:^6.0
+composer require nvl/ownership:^7.0 nvl/media:^7.0
 php artisan vendor:publish --tag=nvl-ownership-config
 php artisan vendor:publish --tag=nvl-ownership-skills
 php artisan nvl:ownership:doctor --strict --format=json
@@ -28,18 +28,17 @@ reads, immutable assignment, source transaction fences, scalar queue capture, an
 reviewed adoption. It installs no Company, User, Tenant, membership or role models.
 Host authorization remains required inside an admitted owner.
 
-The 6.0.0 implementation covers the stateful NVL package graph, including
+The native implementation covers the stateful NVL package graph, including
 Auth, Tasks, CSV, Mail, Billing, Payments and Translations. Install only the domain
-packages you need. Tenancy remains an explicitly selected migration bridge;
-ordinary unowned applications need neither enforcement runtime. The release passed
-the native ownership cutover gate and a fresh public Composer installation.
-Deployment-specific cutover rehearsal remains required before enabling isolation.
+packages you need. The retired Tenancy bridge supplies no supported runtime or
+authority. Ordinary unowned applications need no enforcement runtime.
+Complete deployment-specific cutover rehearsal before enabling isolation.
 
 ## Quick reference
 
 | Item | Value |
 |---|---|
-| Installed through | `composer require nvl/ownership:^6.0` |
+| Installed through | `composer require nvl/ownership:^7.0` |
 | Module identifier | `nvl/ownership` |
 | PHP namespace | `Nvl\Ownership` |
 | Service provider | `Nvl\Ownership\Providers\OwnershipServiceProvider` |
@@ -52,13 +51,13 @@ private storage, including worker and runtime-removal checks. Complete MariaDB
 and other platform combinations require separate evidence.
 
 ```sh
-composer require nvl/ownership:^6.0 nvl/media:^6.0
+composer require nvl/ownership:^7.0 nvl/media:^7.0
 php artisan vendor:publish --tag=nvl-ownership-config
 php artisan vendor:publish --tag=nvl-ownership-skills
 ```
 
 Laravel discovers the provider. `enabled` and `migrations.enabled` both default to
-false. NVL Auth and Tenancy are optional; register ordinary host owner **and actor**
+false. NVL Auth is optional; register ordinary host owner **and actor**
 classes in `nvl-core.owners`. Native morph aliases stay in Laravel's morph map.
 Do not change existing aliases without reconciling persisted values.
 

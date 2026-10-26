@@ -8,11 +8,11 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
 use Nvl\Ownership\Tests\Fixtures\Adoption\Record;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
-use Nvl\Support\Ownership\Services\InactiveOwnershipMaintenance;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
-use Nvl\Support\Tenancy\Services\PersistedTenantStorage;
-use Nvl\Support\Tenancy\Services\TenantResourceRegistry;
-use Nvl\Support\Tenancy\ValueObjects\TenantResourceDefinition;
+use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
+use Nvl\Support\Ownership\Services\UnownedOwnershipBoundary;
+use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
+use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
 require dirname(__DIR__, 6).'/vendor/autoload.php';
 
@@ -22,17 +22,17 @@ if (! is_array($configuration) || class_exists('Nvl\Ownership\Providers\Ownershi
     throw new RuntimeException('The cold probe requires neutral Core without either runtime provider.');
 }
 $container = new Application;
-$options = new Repository(['nvl-tenancy' => ['enabled' => false]]);
+$options = new Repository(['nvl-ownership' => ['enabled' => false]]);
 $container->instance('config', $options);
 Facade::setFacadeApplication($container);
 $database = new Manager($container);
 $database->addConnection($configuration);
 $database->bootEloquent();
-$resources = new TenantResourceRegistry;
-$resources->register(new TenantResourceDefinition('renamed.records', 'fixture', Record::class));
-$guard = new PersistedTenantStorage($options, $resources, new OwnershipResourceRegistry, new InactiveOwnershipMaintenance);
+$resources = new OwnershipResourceRegistry;
+$resources->register(new OwnershipResourceDefinition('renamed.records', 'fixture', Record::class, OwnershipDefinition::unscoped()));
+$guard = new UnownedOwnershipBoundary($options, $resources, new PersistedOwnershipStorage);
 try {
-    $guard->assertUsable('renamed.records');
+    $guard->query(Record::query(), 'renamed.records')->get();
     fwrite(STDOUT, 'escaped');
 } catch (OwnershipSchemaNotReady) {
     fwrite(STDOUT, 'blocked');
