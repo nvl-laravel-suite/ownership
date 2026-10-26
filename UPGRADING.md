@@ -1,5 +1,15 @@
 # Upgrading to ownership
 
+## NVL Light: planned family 7
+
+Light requires PHP 8.4 and Laravel 13. Replace retired package Actions, transport DTOs, HTTP endpoints and generated frontend types with host-owned adapters around the native services documented in [README.md](README.md). Models remain ordinary Eloquent models; domain operations retain their documented policies, validation, locks and lifecycle guarantees. Pass explicit admitted actors and configure optional integrations deliberately.
+
+Upgrade the selected family together. Preserve stored identities, migration ownership, source connections, queue state and operation recovery journals. Review and apply the relevant storage/adoption procedure before accepting writes; installing new code alone does not migrate existing data.
+
+## Historical upgrade notes
+
+The following sections describe pre-Light releases and their old APIs, compatibility windows and commands. They remain useful for understanding existing installations, but are not Light setup instructions. The old Tenancy bridge, DTO/Action contracts, package HTTP and type generation are retired in Light.
+
 ## 6.0.1 consolidation patch
 
 The shared native backfill implementation first ships in Ownership 6.0.1. Domain patches using it reject an older installed Ownership runtime. Ownership remains optional; ordinary unowned hosts do not need to install it.

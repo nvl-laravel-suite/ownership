@@ -14,7 +14,7 @@
         "ext-mbstring": "*",
         "ext-pdo": "*",
         "laravel/framework": "^13.0",
-        "nvl/core": "^6.0",
+        "nvl/core": "^7.0",
         "php": "^8.4"
     },
     "require-dev": {
@@ -25,7 +25,7 @@
         "pestphp/pest": "^4.0",
         "pestphp/pest-plugin-laravel": "^4.0",
         "symfony/process": "^7.2 || ^8.0",
-        "nvl/translations": "^6.0"
+        "nvl/translations": "^7.0"
     },
     "autoload": {
         "psr-4": {
@@ -50,7 +50,7 @@
     },
     "extra": {
         "branch-alias": {
-            "dev-main": "6.x-dev"
+            "dev-main": "7.x-dev"
         },
         "laravel": {
             "providers": [
@@ -82,7 +82,8 @@
             "/**/.DS_Store",
             "/**/.gitattributes",
             "/**/.gitignore",
-            "/**/.gitkeep"
+            "/**/.gitkeep",
+            ".DS_Store"
         ]
     },
     "minimum-stability": "stable",

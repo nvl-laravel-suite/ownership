@@ -263,15 +263,5 @@
             ],
             "constants": []
         }
-    },
-    "models": {},
-    "capability_relations": {},
-    "tables": {
-        "adoption_checkpoints": "nvl_ownership_adoption_checkpoints",
-        "adoption_runs": "nvl_ownership_adoption_runs",
-        "legacy_owner_mappings": "nvl_ownership_legacy_owner_mappings",
-        "operation_facts": "nvl_ownership_operation_facts",
-        "resource_markers": "nvl_ownership_resource_markers",
-        "stores": "nvl_ownership_stores"
     }
 }

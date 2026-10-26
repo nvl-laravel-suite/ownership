@@ -47,10 +47,7 @@ Deployment-specific cutover rehearsal remains required before enabling isolation
 
 ## Requirements and installation
 
-PHP 8.4, Core 6, and Laravel 13 are the verified enabled-runtime baseline. The
-manifest permits Laravel 12 installation with the feature disabled; enabled
-isolation requires Laravel's transaction-committing boundary and fails closed when
-that capability is unavailable. Native archive consumers passed on PostgreSQL 17 and MySQL 8.4 with Redis and
+NVL Light requires PHP 8.4 and Laravel 13. Enabled isolation requires Laravel's transaction-committing boundary and fails closed when that capability is unavailable. Native archive consumers passed on PostgreSQL 17 and MySQL 8.4 with Redis and
 private storage, including worker and runtime-removal checks. Complete MariaDB
 and other platform combinations require separate evidence.
 
@@ -386,9 +383,7 @@ Use separately authorized system workflows for durable background work.
 
 Owned root instance counters, quiet counters, saves, deletes and restorations
 retain the canonical source guard. Configured subclasses cannot replace those
-persistence seams. Query builders still belong behind documented package Actions
-and capabilities; ownership is not a replacement for host authorization or native
-SQL permissions.
+persistence seams. Models and query builders remain native Eloquent APIs; use domain services for their complete lifecycle and authorization guarantees. Ownership is not a replacement for host authorization or native SQL permissions.
 
 
 ## Reviewed migration commands

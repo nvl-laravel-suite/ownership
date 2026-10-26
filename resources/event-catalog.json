@@ -1,16 +1,16 @@
 {
-  "schema_version": 1,
-  "package": "nvl/ownership",
-  "documentation": "docs/events.md",
-  "implementation_status": "implemented; no domain events",
-  "events": [],
-  "value_types": [],
-  "aliases": [],
-  "publication": null,
-  "security_notes": [
-    "This package declares no domain events."
-  ],
-  "no_op_semantics": "No package domain events are declared.",
-  "notes": [],
-  "no_events_reason": "Ownership is isolation infrastructure. Source transaction and queue lifecycle hooks are not public domain events."
+    "schema_version": 1,
+    "package": "nvl/ownership",
+    "documentation": "docs/events.md",
+    "implementation_status": "implemented; no domain events",
+    "events": [],
+    "value_types": [],
+    "aliases": [],
+    "publication": null,
+    "security_notes": [
+        "This package declares no domain events."
+    ],
+    "no_op_semantics": "No package domain events are declared.",
+    "notes": [],
+    "no_events_reason": "Ownership is isolation infrastructure. Source transaction and queue lifecycle hooks are not public domain events."
 }

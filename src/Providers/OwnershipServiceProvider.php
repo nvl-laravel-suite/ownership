@@ -77,15 +77,18 @@ use Nvl\Support\Ownership\Services\UnavailableOwnershipSystemRunner;
 use Nvl\Support\Ownership\Services\UnownedOwnershipBoundary;
 use Nvl\Support\Ownership\Services\UnownedOwnershipWriter;
 use Nvl\Support\Providers\SupportServiceProvider;
+use Nvl\Support\Traits\MergesPackageConfiguration;
 
 /** Registers the optional runtime without installing owner or tenant schema. */
 final class OwnershipServiceProvider extends ServiceProvider
 {
+    use MergesPackageConfiguration;
+
     /** Register immutable metadata and fresh execution services. */
     public function register(): void
     {
         $this->app->register(SupportServiceProvider::class);
-        $this->mergeConfigFrom(__DIR__.'/../../config/nvl-ownership.php', 'nvl-ownership');
+        $this->mergePackageConfiguration(__DIR__.'/../../config/nvl-ownership.php', 'ownership');
         $this->app->instance('nvl.ownership.runtime', true);
         $this->app->singletonIf(OwnershipResourceRegistry::class);
         $this->app->singletonIf(OwnershipAdoptionRegistry::class);

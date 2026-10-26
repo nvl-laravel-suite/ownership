@@ -16,4 +16,5 @@
 /**/.gitattributes export-ignore
 /**/.gitignore export-ignore
 /**/.gitkeep export-ignore
+.DS_Store export-ignore
 # END NVL COMPOSER EXPORTS
