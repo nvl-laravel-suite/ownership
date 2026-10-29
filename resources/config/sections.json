@@ -3,13 +3,13 @@
     "configs": {
         "nvl-ownership": {
             "common": [
-                "enabled",
                 "connection",
+                "enabled",
                 "migrations.enabled"
             ],
             "advanced": [
-                "system_operations",
-                "central_operations"
+                "central_operations",
+                "system_operations"
             ]
         }
     }
