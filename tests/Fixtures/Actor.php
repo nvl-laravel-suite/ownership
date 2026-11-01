@@ -19,6 +19,8 @@ final class Actor extends User
     /** @var list<string> */
     protected $guarded = [];
 
+    public $incrementing = false;
+
     public $timestamps = false;
 
     /** Allow a regression to alter only the actor's effective physical source. */

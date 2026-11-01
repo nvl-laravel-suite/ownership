@@ -60,7 +60,7 @@ abstract class OwnershipTestCase extends TestCase
             throw new \RuntimeException('Persistence tests require distinct primary and remote databases.');
         }
         if ($driver === 'pgsql') {
-            $connection = ['driver' => 'pgsql', 'host' => '/tmp', 'port' => '5432', 'database' => $primary, 'username' => get_current_user(), 'password' => '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
+            $connection = ['driver' => 'pgsql', 'host' => getenv('NVL_OWNERSHIP_TEST_HOST') ?: '/tmp', 'port' => getenv('NVL_OWNERSHIP_TEST_PORT') ?: '5432', 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: get_current_user(), 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
         } else {
             $host = getenv('NVL_OWNERSHIP_TEST_HOST') ?: '127.0.0.1';
             $port = getenv('NVL_OWNERSHIP_TEST_PORT');
@@ -78,6 +78,7 @@ abstract class OwnershipTestCase extends TestCase
     {
         parent::setUp();
         if (in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+            $this->assertSame(getenv('NVL_OWNERSHIP_TEST_DRIVER'), DB::connection()->getDriverName());
             foreach (['sqlite', 'ownership_remote'] as $connection) {
                 DB::connection($connection)->getSchemaBuilder()->dropAllTables();
             }

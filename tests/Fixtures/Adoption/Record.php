@@ -13,6 +13,8 @@ class Record extends Model
 
     protected $guarded = [];
 
+    public $incrementing = false;
+
     public $timestamps = false;
 
     /** Return the persisted scalar source identity without coercing objects or null. */

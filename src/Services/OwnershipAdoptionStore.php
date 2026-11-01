@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Services;
 
+use Closure;
 use Illuminate\Container\Container;
 use Illuminate\Support\Str;
 use Nvl\Ownership\Contracts\OwnerAvailability;
@@ -24,9 +25,10 @@ use Nvl\Support\Ownership\ValueObjects\OwnerReference;
  * @internal
  *
  * @phpstan-import-type Graph from OwnershipAdoptionGraph
+ * @phpstan-import-type Snapshot from OwnershipAdoptionConservation
  *
  * @phpstan-type Checkpoint array{prepared: bool, cursor: string|null, done: bool, activated: bool}
- * @phpstan-type Checkpoints array{manifest: string, adapters: array<string, Checkpoint>, fingerprints: array<string, string>}
+ * @phpstan-type Checkpoints array{manifest: string, adapters: array<string, Checkpoint>, fingerprints: array<string, string>, constraint_refresh?: Snapshot}
  * @phpstan-type Run array{plan: OwnershipAdoptionPlan, status: string, packages: list<string>, checkpoints: Checkpoints}
  */
 final readonly class OwnershipAdoptionStore
@@ -68,7 +70,28 @@ final readonly class OwnershipAdoptionStore
             $fingerprints[$key] = $fingerprint;
         }
 
-        return ['plan' => new OwnershipAdoptionPlan($id, $this->connections->name($this->connections->core()->getName()), $row->mapping_hash, $row->configuration_hash), 'status' => $row->status, 'packages' => array_values(array_filter($packages, 'is_string')), 'checkpoints' => ['manifest' => $checkpoints['manifest'], 'adapters' => $adapters, 'fingerprints' => $fingerprints]];
+        $validated = ['manifest' => $checkpoints['manifest'], 'adapters' => $adapters, 'fingerprints' => $fingerprints];
+        if (array_key_exists('constraint_refresh', $checkpoints)) {
+            if ($row->status !== 'refreshing' || ! is_array($checkpoints['constraint_refresh']) || $checkpoints['constraint_refresh'] === []) {
+                throw new OwnershipConfigurationInvalid('Invalid constraint refresh checkpoint.');
+            }
+            $snapshot = [];
+            foreach ($checkpoints['constraint_refresh'] as $resource => $entry) {
+                if (! is_string($resource) || ! is_array($entry) || ! is_string($entry['store'] ?? null) || $entry['store'] === ''
+                    || ! is_string($entry['table'] ?? null) || $entry['table'] === '' || ! is_string($entry['key'] ?? null) || $entry['key'] === ''
+                    || ! is_int($entry['rows'] ?? null) || $entry['rows'] < 0 || ! is_string($entry['digest'] ?? null)
+                    || preg_match('/^[a-f0-9]{64}$/D', $entry['digest']) !== 1) {
+                    throw new OwnershipConfigurationInvalid('Invalid constraint refresh conservation snapshot.');
+                }
+                $snapshot[$resource] = ['store' => $entry['store'], 'table' => $entry['table'], 'key' => $entry['key'], 'rows' => $entry['rows'], 'digest' => $entry['digest']];
+            }
+            ksort($snapshot, SORT_STRING);
+            $validated['constraint_refresh'] = $snapshot;
+        } elseif ($row->status === 'refreshing') {
+            throw new OwnershipConfigurationInvalid('A constraint refresh requires its original conservation snapshot.');
+        }
+
+        return ['plan' => new OwnershipAdoptionPlan($id, $this->connections->name($this->connections->core()->getName()), $row->mapping_hash, $row->configuration_hash), 'status' => $row->status, 'packages' => array_values(array_filter($packages, 'is_string')), 'checkpoints' => $validated];
     }
 
     /**
@@ -98,6 +121,18 @@ final readonly class OwnershipAdoptionStore
      */
     public function mappingHash(string $runId, array $graph): string
     {
+        return $this->hashMappings($runId, fn (OwnershipMapping $assignment): string => $this->validateAssignment($runId, $assignment, $graph));
+    }
+
+    /** Verify sealed mapping bytes without reauthorizing historical assignments or source inventory. */
+    public function immutableMappingHash(string $runId): string
+    {
+        return $this->hashMappings($runId, fn (OwnershipMapping $assignment): string => $this->metadataBytes($assignment));
+    }
+
+    /** @param Closure(OwnershipMapping): string $metadata */
+    private function hashMappings(string $runId, Closure $metadata): string
+    {
         $connection = $this->connections->core();
         $ordering = match ($connection->getDriverName()) {
             'mysql', 'mariadb' => 'BINARY resource, BINARY record_id',
@@ -107,7 +142,7 @@ final readonly class OwnershipAdoptionStore
         $hash = hash_init('sha256');
         foreach ($connection->table(Tables::Mappings)->where('run_id', $runId)->orderByRaw($ordering)->cursor() as $row) {
             $assignment = $this->decodeMapping($row);
-            $canonical = $this->validateAssignment($runId, $assignment, $graph);
+            $canonical = $metadata($assignment);
             hash_update($hash, json_encode([$assignment->resource, $assignment->recordId, $assignment->owner?->toArray(), $canonical, $assignment->legacyTenantId], JSON_THROW_ON_ERROR)."\n");
         }
 
@@ -206,16 +241,24 @@ final readonly class OwnershipAdoptionStore
         if ($assignment->owner !== null && $definition->ownership->owner !== null && $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner)) {
             throw new OwnershipViolation('The mapping owner differs from the declared concrete owner.');
         }
-        $nodes = 0;
-        $canonical = json_encode($this->canonical($assignment->metadata, 0, $nodes), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
-        if (strlen($canonical) > 16384) {
-            throw new OwnershipConfigurationInvalid('Assignment metadata exceeds 16384 bytes.');
-        }
+        $canonical = $this->metadataBytes($assignment);
         $adapter = $graph['adapters'][$owner];
         if ($adapter instanceof OwnershipAdoptionMetadataValidator) {
             $this->scope->during($runId, $adapter::class, 'metadata', fn () => $adapter->validateAssignment($assignment));
         } elseif ($assignment->metadata !== []) {
             throw new OwnershipConfigurationInvalid('This adoption adapter does not accept metadata.');
+        }
+
+        return $canonical;
+    }
+
+    /** Canonicalize immutable metadata bytes without granting current assignment authority. */
+    private function metadataBytes(OwnershipMapping $assignment): string
+    {
+        $nodes = 0;
+        $canonical = json_encode($this->canonical($assignment->metadata, 0, $nodes), JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+        if (strlen($canonical) > 16384) {
+            throw new OwnershipConfigurationInvalid('Assignment metadata exceeds 16384 bytes.');
         }
 
         return $canonical;

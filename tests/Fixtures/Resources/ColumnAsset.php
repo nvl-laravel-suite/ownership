@@ -19,6 +19,8 @@ class ColumnAsset extends Model implements Ownable
 
     protected $guarded = [];
 
+    public $incrementing = false;
+
     public $timestamps = false;
 
     /** Declare the host's existing native owner key. */

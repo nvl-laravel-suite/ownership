@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject padded/newline partition keys, forged morph aliases and case/padding changes to immutable scalar fields while preserving native JSON equality. Compare MariaDB UUID references through their canonical text on the actual source, including MySQL-labelled connections.
+- Add explicit authorized constraint refresh with durable conservation checkpoints for active graphs; reject replacement-plan marker conflicts before persisting a new run or mappings. See [UPGRADING.md](UPGRADING.md) for installed-trigger refresh.
+- Reuse column and foreign-key metadata within a single live graph inspection while preserving immediate generation, constraint and owner-availability checks between operations.
+- Preserve full composite uniqueness on MySQL and MariaDB with ASCII, binary partition keys; refuse unsafe conversion of noncanonical values or columns protected by partition foreign keys.
+- Clarify when enabled-only commands become available and why persisted ownership probes cannot retain negative readiness results.
+
 ## [6.1.0] - 2026-10-23
 
 <!-- NVL GENERATED CHANGES START -->

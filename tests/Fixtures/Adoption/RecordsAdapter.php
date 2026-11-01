@@ -79,5 +79,9 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         if (config('ownership_test.interrupt') === $this->resources()[0]) {
             throw new RuntimeException('Interrupted constraint application.');
         }
+        $callback = config('ownership_test.activate_callback');
+        if ($callback instanceof \Closure) {
+            $callback($this->resources()[0]);
+        }
     }
 }

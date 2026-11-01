@@ -19,6 +19,8 @@ final class Company extends Model
     /** @var list<string> */
     protected $guarded = [];
 
+    public $incrementing = false;
+
     public $timestamps = false;
 
     /** @return array<string, string> */

@@ -13,11 +13,14 @@ admission and adoption sections below before enabling traffic:
 composer require nvl/ownership:^7.0 nvl/media:^7.0
 php artisan vendor:publish --tag=nvl-ownership-config
 php artisan vendor:publish --tag=nvl-ownership-skills
-php artisan nvl:ownership:doctor --strict --format=json
 ```
 
 Installation and Doctor output do not adopt existing storage or authorize an
 actor. Bind host admission, select migrations, and complete reviewed adoption.
+Ownership commands are registered only when `nvl-ownership.enabled` is true.
+After configuring admission and entering the reviewed maintenance/adoption
+workflow, enable the runtime and use
+`php artisan nvl:ownership:doctor --strict --format=json` to inspect readiness.
 
 ## Purpose
 
@@ -33,6 +36,13 @@ Auth, Tasks, CSV, Mail, Billing, Payments and Translations. Install only the dom
 packages you need. The retired Tenancy bridge supplies no supported runtime or
 authority. Ordinary unowned applications need no enforcement runtime.
 Complete deployment-specific cutover rehearsal before enabling isolation.
+
+Readiness and owner availability remain live checks on every admitted operation.
+Schema metadata is shared only within one resource-graph inspection; it is not
+retained across queries, jobs or requests. A changed generation, removed native
+constraint or unavailable owner must be rejected immediately. Disabled/unowned
+storage also probes the actual protocol catalog so another process's adoption
+cannot silently expose a newly partitioned table without its runtime.
 
 ## Quick reference
 
@@ -227,6 +237,40 @@ The helper installs native partition columns and immutable constraints through
 Ownership's schema implementation. The coordinator still checks authorization,
 maintenance, graph closure, mapping conservation and activation; the helper cannot
 be called independently to manufacture readiness. It refuses nonempty resources.
+MySQL and MariaDB partition columns use `ascii` / `ascii_bin` while retaining
+their 191-character capacity. This preserves full composite indexes without
+prefix uniqueness. Maintenance preparation can convert existing canonical
+columns when no partition foreign key depends on them. A column participating
+in an incoming or outgoing partition foreign key requires a reviewed migration
+that preserves the complete graph. Readiness checks continue to accept already
+protected UTF8 storage.
+
+Updating PHP constraint generators does not rewrite installed database triggers.
+To refresh an already active graph, drain workers and requests, enter maintenance,
+and use a reviewed host migration with `$withinTransaction = false`. The host's
+`OwnershipAdoptionAccess` must explicitly authorize the operation purpose
+`ownership.constraints.refresh` for the current operator:
+
+```php
+$coordinator->refreshConstraints(
+    $coordinator->resume($activePlanUuid),
+    new OwnershipOperation('ownership.constraints.refresh', 'operator', $operatorId),
+);
+```
+
+This operation retains the active plan, generation and reviewed mappings. It
+validates current canonical ownership, including rows created after adoption,
+and persists only resource counts, descriptors and rolling digests before
+reapplying the registered constraint callbacks. It does not prepare or backfill
+application rows. A failed refresh remains fenced; retry the same operation and
+plan after resolving the interruption. Retries must match the original persisted
+snapshot, so intervening data changes cannot become a new baseline. Do not edit
+checkpoint hashes, delete markers, or prepare a replacement plan to refresh DDL.
+Ordinary activation of an active plan may reject a changed record inventory or
+return without reinstalling constraints.
+Generated partition columns and noncanonical expression defaults also require a
+reviewed migration; preparation never removes their generation semantics.
+
 Existing records require a dedicated reviewed adoption adapter and mappings.
 After activation, normal host writes use `OwnershipWriter` inside an admitted
 `OwnershipRunner` operation. Do not call schema internals or write readiness markers.
@@ -358,7 +402,7 @@ rechecks revision/revocation during copying, and creates independent private ass
 Run the affected package suite and max-level analysis. The source workbench uses
 `php tools/run-package-tests.php --concurrency=1 ownership media` and
 `php tools/analyse-packages.php core ownership media`. In a package checkout use
-`composer test` and `composer analyse`. Run `php artisan nvl:ownership:doctor --json`
+`composer test` and `composer analyse`. Run `php artisan nvl:ownership:doctor --strict --format=json`
 before enabling service. Rehearse backups, exact mappings, interruption/resumption,
 negative cross-owner operations, private delivery and real worker restoration on
 the deployment's actual database and queue transports.
@@ -436,10 +480,6 @@ checkpoint does not certify an arbitrary host configuration.
 Ownership declares no domain events; see [event behavior](docs/events.md). Protocol
 state is not an application outbox and Laravel database/queue lifecycle hooks are
 not public domain facts. Keep actual worker tests distinct from `Queue::fake()`.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
 
 ## License
 

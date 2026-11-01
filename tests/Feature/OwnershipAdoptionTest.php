@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
+use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
 use Nvl\Ownership\Services\OwnerIdentityResolver;
 use Nvl\Ownership\Services\OwnershipAdoptionCoordinator;
 use Nvl\Ownership\Services\OwnershipAdoptionRegistry;
@@ -26,6 +27,7 @@ use Nvl\Ownership\Tests\Fixtures\Adoption\RemoteRecord;
 use Nvl\Ownership\Tests\Fixtures\Adoption\RemoteRecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Company;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
+use Nvl\Ownership\ValueObjects\OwnershipBackfillResult;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Ownership\ValueObjects\OwnershipVerification;
@@ -35,6 +37,7 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
@@ -75,6 +78,174 @@ beforeEach(function (): void {
         {
             return [];
         }
+    });
+});
+
+describe('explicit constraint refresh', function (): void {
+    beforeEach(function (): void {
+        $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+        {
+            public function authorize(OwnershipOperation $operation): void {}
+        });
+        $this->coordinator = app(OwnershipAdoptionCoordinator::class);
+        $this->plan = $this->coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
+        $this->coordinator->backfill($this->plan, 100, $this->operation);
+        $this->coordinator->activate($this->plan, $this->operation);
+        foreach (['sqlite', 'ownership_remote'] as $name) {
+            DB::connection($name)->table('ownership_test_records')->insert([
+                'id' => 2, 'company_id' => 7, 'owner_scope_key' => $this->owner->scopeKey(),
+                'owner_reference' => json_encode($this->owner->toArray(), JSON_THROW_ON_ERROR),
+            ]);
+        }
+        $this->refreshOperation = new OwnershipOperation('ownership.constraints.refresh', 'operator', '1');
+    });
+
+    it('refreshes only constraints while conserving post-adoption rows and immutable generation facts', function (): void {
+        $before = [];
+        foreach (['sqlite', 'ownership_remote'] as $name) {
+            $before[$name] = DB::connection($name)->table('ownership_test_records')->orderBy('id')->get()->all();
+        }
+        $calls = [];
+        $generations = app(OwnershipInstallationState::class)->generations();
+        $this->allowOwners();
+        Company::query()->whereKey(7)->update(['active' => false]);
+        config(['ownership_test.callback' => static fn () => throw new RuntimeException('Preparation must not run during refresh.')]);
+        config(['ownership_test.activate_callback' => static function (string $resource) use (&$calls): void {
+            $calls[] = $resource;
+        }]);
+        $this->coordinator->refreshConstraints($this->coordinator->resume($this->plan->id), $this->refreshOperation);
+
+        expect($calls)->toBe(['fixture.records', 'remote.records'])
+            ->and(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
+            ->and(DB::table('nvl_ownership_legacy_owner_mappings')->count())->toBe(2)
+            ->and(app(OwnershipInstallationState::class)->generations())->toBe($generations);
+        foreach (['sqlite', 'ownership_remote'] as $name) {
+            expect(DB::connection($name)->table('ownership_test_records')->orderBy('id')->get()->all())->toEqual($before[$name]);
+        }
+        expect(fn () => app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), static fn () => true))->toThrow(OwnershipViolation::class);
+        expect(fn () => $this->coordinator->activate($this->plan, $this->operation))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $this->coordinator->backfill($this->plan, 100, $this->operation))->toThrow(OwnershipViolation::class);
+    });
+
+    it('conserves current rows after a legitimately removed original adoption record', function (): void {
+        foreach (['sqlite', 'ownership_remote'] as $name) {
+            DB::connection($name)->table('ownership_test_records')->where('id', 1)->delete();
+        }
+        $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation);
+        expect(DB::table('nvl_ownership_legacy_owner_mappings')->count())->toBe(2)
+            ->and(DB::table('ownership_test_records')->pluck('id')->all())->toBe([2])
+            ->and(DB::connection('ownership_remote')->table('ownership_test_records')->pluck('id')->all())->toBe([2]);
+        expect(fn () => $this->coordinator->activate($this->plan, $this->operation))->toThrow(OwnershipConfigurationInvalid::class);
+    });
+
+    it('requires fresh authorization and unchanged configuration before fencing a refresh', function (string $failure): void {
+        if ($failure === 'actor') {
+            $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+            {
+                public function authorize(OwnershipOperation $operation): void
+                {
+                    throw new OwnershipViolation('Denied refresh operator.');
+                }
+            });
+        } elseif ($failure === 'configuration') {
+            config(['nvl-core.owners' => [Company::class]]);
+        }
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $failure === 'purpose' ? $this->operation : $this->refreshOperation))
+            ->toThrow($failure === 'configuration' ? OwnershipConfigurationInvalid::class : OwnershipViolation::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
+            ->and(DB::table(Tables::Markers)->value('state'))->toBe('active');
+    })->with(['actor', 'configuration', 'purpose']);
+
+    it('refuses a replacement plan before persisting any new run or mappings', function (): void {
+        $runs = DB::table('nvl_ownership_adoption_runs')->count();
+        $mappings = DB::table('nvl_ownership_legacy_owner_mappings')->count();
+        expect(fn () => $this->coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation))->toThrow(OwnershipSchemaNotReady::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->count())->toBe($runs)
+            ->and(DB::table('nvl_ownership_legacy_owner_mappings')->count())->toBe($mappings);
+    });
+
+    it('refuses a resource-empty refresh before changing its accepted active run', function (): void {
+        $adapter = new class implements OwnershipAdoptionAdapter
+        {
+            public function resources(): array
+            {
+                return [];
+            }
+
+            public function prepare(OwnershipAdoptionPlan $plan): void {}
+
+            public function backfill(OwnershipAdoptionPlan $plan, ?string $cursor, int $limit): OwnershipBackfillResult
+            {
+                return new OwnershipBackfillResult(null, 0);
+            }
+
+            public function verify(OwnershipAdoptionPlan $plan): OwnershipVerification
+            {
+                return new OwnershipVerification([]);
+            }
+
+            public function activate(OwnershipAdoptionPlan $plan): void {}
+        };
+        $this->app->instance($adapter::class, $adapter);
+        app(OwnershipAdoptionRegistry::class)->register('empty-refresh', $adapter::class);
+        $plan = $this->coordinator->prepare(['empty-refresh'], [], $this->operation);
+        $this->coordinator->backfill($plan, 100, $this->operation);
+        $this->coordinator->activate($plan, $this->operation);
+        $before = DB::table('nvl_ownership_adoption_runs')->where('id', $plan->id)->first();
+        expect(fn () => $this->coordinator->refreshConstraints($plan, $this->refreshOperation))->toThrow(OwnershipSchemaNotReady::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->where('id', $plan->id)->first())->toEqual($before);
+    });
+
+    it('conserves binary host fields without persisting private payloads in the refresh journal', function (): void {
+        foreach (['sqlite', 'ownership_remote'] as $name) {
+            $connection = DB::connection($name);
+            $connection->getSchemaBuilder()->table('ownership_test_records', static fn (Blueprint $table) => $table->binary('private_bytes')->nullable());
+            $value = $connection->getDriverName() === 'pgsql' ? DB::raw("decode('00fffef1736563726574', 'hex')") : "\x00\xFF\xFE\xF1secret";
+            $connection->table('ownership_test_records')->where('id', 1)->update(['private_bytes' => $value]);
+        }
+        config(['ownership_test.interrupt' => 'remote.records']);
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation))->toThrow(RuntimeException::class);
+        $checkpoint = DB::table('nvl_ownership_adoption_runs')->value('checkpoints');
+        expect($checkpoint)->toBeString()->not->toContain('secret');
+        config(['ownership_test.interrupt' => null]);
+        $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active');
+    });
+
+    it('retains its original snapshot through interruption and rejects intervening data changes', function (): void {
+        config(['ownership_test.interrupt' => 'remote.records']);
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation))->toThrow(RuntimeException::class);
+        $checkpoint = DB::table('nvl_ownership_adoption_runs')->value('checkpoints');
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('refreshing')
+            ->and(fn () => app(OwnershipInstallationState::class)->generations())->toThrow(OwnershipSchemaNotReady::class)
+            ->and(fn () => $this->coordinator->activate($this->plan, $this->operation))->toThrow(OwnershipSchemaNotReady::class)
+            ->and(fn () => $this->coordinator->backfill($this->plan, 100, $this->operation))->toThrow(OwnershipSchemaNotReady::class);
+        $original = DB::table('ownership_test_records')->where('id', 1)->value('owner_reference');
+        DB::table('ownership_test_records')->where('id', 1)->update(['owner_reference' => '{"private":"changed"}']);
+        config(['ownership_test.interrupt' => null]);
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation))->toThrow(OwnershipViolation::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('checkpoints'))->toBe($checkpoint)
+            ->and(DB::table(Tables::Markers)->value('state'))->toBe('prepared');
+        DB::table('ownership_test_records')->where('id', 1)->update(['owner_reference' => $original]);
+        $this->coordinator->refreshConstraints($this->coordinator->resume($this->plan->id), $this->refreshOperation);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
+            ->and(app(OwnershipInstallationState::class)->generations())->toHaveCount(2);
+    });
+
+    it('keeps a failed refresh fenced when an activation callback writes an application row', function (): void {
+        $original = DB::table('ownership_test_records')->where('id', 1)->value('owner_reference');
+        config(['ownership_test.activate_callback' => static function (string $resource): void {
+            if ($resource === 'fixture.records') {
+                DB::table('ownership_test_records')->where('id', 1)->update(['owner_reference' => '{"private":"changed"}']);
+            }
+        }]);
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation))->toThrow(OwnershipViolation::class);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('refreshing');
+        config(['ownership_test.activate_callback' => null]);
+        expect(fn () => $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation))->toThrow(OwnershipViolation::class);
+        DB::table('ownership_test_records')->where('id', 1)->update(['owner_reference' => $original]);
+        $this->coordinator->refreshConstraints($this->plan, $this->refreshOperation);
+        expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active');
     });
 });
 

@@ -150,14 +150,17 @@ it('checks the source session after host SQL callbacks before executing the stat
     $source = DB::connection();
     $original = $source->getPdo();
     $replacement = $other->getPdo();
-    $source->beforeExecuting(static function (string $sql) use ($source, $replacement): void {
-        if (str_starts_with($sql, 'insert into "ownership_test_column_assets"')) {
+    $insertPrefix = 'insert into '.$source->getQueryGrammar()->wrapTable('ownership_test_column_assets');
+    $swapped = false;
+    $source->beforeExecuting(static function (string $sql) use ($source, $replacement, $insertPrefix, &$swapped): void {
+        if (str_starts_with($sql, $insertPrefix)) {
+            $swapped = true;
             $source->setPdo($replacement);
         }
     });
     try {
         expect(fn () => app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), fn () => app(OwnershipWriter::class)->create(ColumnAsset::class, fn (OwnershipAssignment $assignment): ColumnAsset => ColumnAsset::query()->create([...$assignment->attributes(), 'id' => 3, 'name' => 'redirected']))))->toThrow(OwnershipViolation::class);
-        expect($other->table('ownership_test_column_assets')->count())->toBe(0);
+        expect($swapped)->toBeTrue()->and($other->table('ownership_test_column_assets')->count())->toBe(0);
     } finally {
         if ($original->inTransaction()) {
             $original->rollBack();

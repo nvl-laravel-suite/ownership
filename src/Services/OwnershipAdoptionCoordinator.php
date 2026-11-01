@@ -32,6 +32,7 @@ use PDO;
  * @phpstan-import-type Graph from OwnershipAdoptionGraph
  * @phpstan-import-type Run from OwnershipAdoptionStore
  * @phpstan-import-type Checkpoints from OwnershipAdoptionStore
+ * @phpstan-import-type Snapshot from OwnershipAdoptionConservation
  */
 final readonly class OwnershipAdoptionCoordinator
 {
@@ -69,6 +70,7 @@ final readonly class OwnershipAdoptionCoordinator
             }
             $this->assertNoInterruptedRun($graph);
             $id = $review === null ? (string) Str::uuid() : $review->id;
+            $this->assertSourceMarkers($id, $graph);
             $configurationHash = $this->ownership->hash($graph['resources']);
             $fingerprints = [];
             foreach ($graph['resources'] as $resource) {
@@ -104,6 +106,7 @@ final readonly class OwnershipAdoptionCoordinator
 
         return $this->mutate($operation, function () use ($plan, $limit): bool {
             [$run, $graph] = $this->validated($plan);
+            $this->assertNotRefreshing($run);
             if ($run['status'] === 'active') {
                 return true;
             }
@@ -138,6 +141,7 @@ final readonly class OwnershipAdoptionCoordinator
 
         return $this->locked(function () use ($plan): OwnershipVerification {
             [$run, $graph] = $this->validated($plan);
+            $this->assertNotRefreshing($run);
 
             return $this->verifyGraph($plan, $run, $graph, false);
         });
@@ -148,6 +152,7 @@ final readonly class OwnershipAdoptionCoordinator
     {
         $this->mutate($operation, function () use ($plan): void {
             [$run, $graph] = $this->validated($plan);
+            $this->assertNotRefreshing($run);
             if (! $this->verifyGraph($plan, $run, $graph)->passed()) {
                 throw new OwnershipSchemaNotReady('The complete adoption graph must pass verification before activation.');
             }
@@ -177,14 +182,64 @@ final readonly class OwnershipAdoptionCoordinator
         });
     }
 
+    /**
+     * Reapply registered constraint callbacks without changing mappings, generations or resource rows.
+     *
+     * The operation purpose must be ownership.constraints.refresh and receive fresh host authorization.
+     * Requires maintenance, no participating transaction, and the current persisted active plan.
+     * Interrupted refreshes retain their original conservation snapshot and remain fenced until resumed.
+     *
+     * @api
+     */
+    public function refreshConstraints(OwnershipAdoptionPlan $plan, OwnershipOperation $operation): void
+    {
+        if ($operation->purpose !== 'ownership.constraints.refresh') {
+            throw new OwnershipViolation('Constraint refresh requires its explicit ownership.constraints.refresh operation purpose.');
+        }
+        $this->mutate($operation, function () use ($plan): void {
+            [$run, $graph] = $this->validated($plan, constraintRefresh: true);
+            if (! in_array($run['status'], ['active', 'refreshing'], true)) {
+                throw new OwnershipSchemaNotReady('Only an active graph or its interrupted constraint refresh can be refreshed.');
+            }
+            if ($graph['resources'] === []) {
+                throw new OwnershipSchemaNotReady('Constraint refresh requires at least one registered resource.');
+            }
+            $this->assertNoInterruptedRun($graph, $plan->id);
+            foreach ($run['checkpoints']['adapters'] as $checkpoint) {
+                if (! $checkpoint['prepared'] || ! $checkpoint['done'] || ! $checkpoint['activated']) {
+                    throw new OwnershipSchemaNotReady('Constraint refresh requires a completely activated adapter graph.');
+                }
+            }
+            $snapshot = $this->refreshSnapshot($plan, $graph);
+            $checkpoints = $run['checkpoints'];
+            if ($run['status'] === 'active') {
+                $checkpoints['constraint_refresh'] = $snapshot;
+                $this->store->checkpoint($plan->id, 'refreshing', $checkpoints);
+            } elseif (($checkpoints['constraint_refresh'] ?? null) !== $snapshot) {
+                throw new OwnershipViolation('Constraint refresh differs from its original persisted conservation snapshot.');
+            }
+            $this->refreshMarkers($plan, $graph, 'prepared');
+            foreach ($graph['adapters'] as $adapter) {
+                $this->invoke($plan, $adapter, 'activate', fn () => $adapter->activate($plan), constraintRefresh: true);
+            }
+            if ($this->refreshSnapshot($plan, $graph) !== $checkpoints['constraint_refresh']) {
+                throw new OwnershipViolation('Constraint refresh changed application resource rows.');
+            }
+            $this->refreshMarkers($plan, $graph, 'active');
+            unset($checkpoints['constraint_refresh']);
+            $this->store->checkpoint($plan->id, 'active', $checkpoints);
+        });
+    }
+
     /** Reload and validate immutable input without granting permission or performing DDL. */
     public function resume(string $runId): OwnershipAdoptionPlan
     {
         $this->assertTransactionEntry();
 
         return $this->locked(function () use ($runId): OwnershipAdoptionPlan {
-            $plan = $this->store->load($runId)['plan'];
-            $this->validated($plan);
+            $run = $this->store->load($runId);
+            $plan = $run['plan'];
+            $this->validated($plan, constraintRefresh: in_array($run['status'], ['active', 'refreshing'], true));
 
             return $plan;
         });
@@ -207,10 +262,13 @@ final readonly class OwnershipAdoptionCoordinator
     }
 
     /** @param Graph $graph */
-    private function assertNoInterruptedRun(array $graph): void
+    private function assertNoInterruptedRun(array $graph, ?string $except = null): void
     {
         $connection = $this->connections->core();
         foreach ($connection->table(Tables::Runs)->where('status', '!=', 'active')->get() as $run) {
+            if ($except !== null && $run->id === $except) {
+                continue;
+            }
             if (! is_string($run->packages)) {
                 throw new OwnershipConfigurationInvalid('Invalid adoption package history.');
             }
@@ -225,25 +283,34 @@ final readonly class OwnershipAdoptionCoordinator
     }
 
     /** @return array{Run, Graph} */
-    private function validated(OwnershipAdoptionPlan $plan): array
+    private function validated(OwnershipAdoptionPlan $plan, bool $constraintRefresh = false): array
     {
         $run = $this->store->load($plan->id);
+        if (! $constraintRefresh) {
+            $this->assertNotRefreshing($run);
+        }
         $graph = $this->graphs->resolve($run['packages']);
+        $mappingHash = $constraintRefresh && in_array($run['status'], ['active', 'refreshing'], true)
+            ? $this->store->immutableMappingHash($plan->id)
+            : $this->store->mappingHash($plan->id, $graph);
         if ($run['plan'] != $plan || $graph['packages'] !== $run['packages'] || ! hash_equals($graph['manifest'], $run['checkpoints']['manifest'])
             || array_diff(array_keys($run['checkpoints']['adapters']), $run['packages']) !== []
             || array_diff($run['packages'], array_keys($run['checkpoints']['adapters'])) !== []
             || ! hash_equals($this->ownership->hash($graph['resources']), $plan->configurationHash)
-            || ! hash_equals($this->store->mappingHash($plan->id, $graph), $plan->mappingHash)
-            || ! in_array($run['status'], ['prepared', 'backfilling', 'backfilled', 'activating', 'active'], true)) {
+            || ! hash_equals($mappingHash, $plan->mappingHash)
+            || ! in_array($run['status'], ['prepared', 'backfilling', 'backfilled', 'activating', 'active', 'refreshing'], true)) {
             throw new OwnershipConfigurationInvalid('The adoption input, adapter graph, or ownership configuration changed.');
         }
         foreach ($graph['resources'] as $resource) {
             $connection = $this->connections->resource($resource);
+            $definition = $this->container->make(OwnershipResourceRegistry::class)->get($resource);
+            $table = (new $definition->model)->getTable();
             $marker = $connection->table(Tables::Markers)->useWritePdo()->where('resource', $resource)->first();
             if ($marker === null && ! $run['checkpoints']['adapters'][$graph['owners'][$resource]]['prepared']) {
                 continue;
             }
-            if ($marker === null || $marker->generation !== $plan->id || $marker->configuration_hash !== $this->ownership->fingerprint($resource)
+            if ($marker === null || $marker->physical_table !== $table
+                || $marker->generation !== $plan->id || $marker->configuration_hash !== $this->ownership->fingerprint($resource)
                 || $marker->source_store !== $this->connections->identity($connection)
                 || $marker->coordinator_store !== $this->connections->identity($this->connections->core())
                 || ! in_array($marker->schema_version, [1, '1'], true)
@@ -253,6 +320,39 @@ final readonly class OwnershipAdoptionCoordinator
         }
 
         return [$run, $graph];
+    }
+
+    /** @param Run $run */
+    private function assertNotRefreshing(array $run): void
+    {
+        if ($run['status'] === 'refreshing') {
+            throw new OwnershipSchemaNotReady('Resume the explicit constraint refresh before using adoption phases.');
+        }
+    }
+
+    /**
+     * @param  Graph  $graph
+     * @return Snapshot
+     */
+    private function refreshSnapshot(OwnershipAdoptionPlan $plan, array $graph): array
+    {
+        $snapshot = [];
+        foreach ($graph['adapters'] as $adapter) {
+            $snapshot = [...$snapshot, ...$this->invoke($plan, $adapter, 'verify', fn (): array => $this->conservation->snapshot($adapter), constraintRefresh: true)];
+        }
+        ksort($snapshot, SORT_STRING);
+
+        return $snapshot;
+    }
+
+    /** @param Graph $graph */
+    private function refreshMarkers(OwnershipAdoptionPlan $plan, array $graph, string $state): void
+    {
+        foreach ($graph['resources'] as $resource) {
+            $this->connections->resource($resource)->table(Tables::Markers)->where('resource', $resource)->where('generation', $plan->id)
+                ->update(['state' => $state, 'updated_at' => now()]);
+        }
+        $this->validated($plan, constraintRefresh: true);
     }
 
     /**
@@ -300,7 +400,7 @@ final readonly class OwnershipAdoptionCoordinator
      * @param  Closure(): T  $callback
      * @return T
      */
-    private function invoke(OwnershipAdoptionPlan $plan, OwnershipAdoptionAdapter $adapter, string $phase, Closure $callback, bool $requiresMaintenance = true): mixed
+    private function invoke(OwnershipAdoptionPlan $plan, OwnershipAdoptionAdapter $adapter, string $phase, Closure $callback, bool $requiresMaintenance = true, bool $constraintRefresh = false): mixed
     {
         $connection = $this->connections->core();
         $pdo = $connection->getPdo();
@@ -309,7 +409,7 @@ final readonly class OwnershipAdoptionCoordinator
         if ($requiresMaintenance && (! $enabled || ! $maintenance)) {
             throw new OwnershipViolation('Adoption requires enabled ownership and application maintenance mode.');
         }
-        $this->validated($plan);
+        $this->validated($plan, $constraintRefresh);
         $this->assertCallbackBoundary($connection, $pdo, $enabled, $maintenance);
         $sessions = [];
         foreach ($this->connections->participating() as $id => $source) {
@@ -322,7 +422,7 @@ final readonly class OwnershipAdoptionCoordinator
             }
         }
         $this->assertCallbackBoundary($connection, $pdo, $enabled, $maintenance);
-        $this->validated($plan);
+        $this->validated($plan, $constraintRefresh);
         $this->assertCallbackBoundary($connection, $pdo, $enabled, $maintenance);
 
         return $result;
@@ -357,9 +457,7 @@ final readonly class OwnershipAdoptionCoordinator
             $table = (new $definition->model)->getTable();
             $existing = $connection->table(Tables::Markers)->where('resource', $resource)->orWhere('physical_table', $table)->first();
             if ($existing !== null) {
-                if ($existing->resource !== $resource || $existing->generation !== $plan->id || $existing->configuration_hash !== $this->ownership->fingerprint($resource)) {
-                    throw new OwnershipSchemaNotReady('Resume the original source adoption; marker replacement is forbidden.');
-                }
+                $this->assertSourceMarker($existing, $plan->id, $resource, $table);
 
                 continue;
             }
@@ -369,6 +467,32 @@ final readonly class OwnershipAdoptionCoordinator
                 'coordinator_store' => $this->connections->identity($this->connections->core()), 'source_store' => $this->connections->identity($connection),
                 'created_at' => now(), 'updated_at' => now(),
             ]);
+        }
+    }
+
+    /**
+     * Reject a known marker conflict before persisting a new run or its mappings.
+     *
+     * @param  Graph  $graph
+     */
+    private function assertSourceMarkers(string $generation, array $graph): void
+    {
+        foreach ($graph['resources'] as $resource) {
+            $definition = $this->container->make(OwnershipResourceRegistry::class)->get($resource);
+            $table = (new $definition->model)->getTable();
+            $existing = $this->connections->resource($resource)->table(Tables::Markers)->where('resource', $resource)->orWhere('physical_table', $table)->first();
+            if ($existing !== null) {
+                $this->assertSourceMarker($existing, $generation, $resource, $table);
+            }
+        }
+    }
+
+    /** Require the original physical resource, generation and immutable configuration. */
+    private function assertSourceMarker(object $marker, string $generation, string $resource, string $table): void
+    {
+        $attributes = get_object_vars($marker);
+        if (($attributes['resource'] ?? null) !== $resource || ($attributes['physical_table'] ?? null) !== $table || ($attributes['generation'] ?? null) !== $generation || ($attributes['configuration_hash'] ?? null) !== $this->ownership->fingerprint($resource)) {
+            throw new OwnershipSchemaNotReady('Resume the original source adoption; marker replacement is forbidden.');
         }
     }
 

@@ -6,6 +6,7 @@ namespace Nvl\Ownership\Services;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\Schema\Blueprint;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
@@ -16,6 +17,8 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
  * Shared partition DDL invoked explicitly by each package's adoption adapter.
  *
  * @internal
+ *
+ * @phpstan-type ForeignKey array{name: string|null, columns: list<string>, foreign_schema: string|null, foreign_table: string, foreign_columns: list<string>, on_update: string|null, on_delete: string|null}
  */
 final readonly class OwnershipSchema
 {
@@ -34,9 +37,7 @@ final readonly class OwnershipSchema
         }
         $schema = $connection->getSchemaBuilder();
         $table = $model->getTable();
-        if (! $schema->hasColumn($table, 'owner_scope_key')) {
-            $schema->table($table, static fn (Blueprint $table) => $table->string('owner_scope_key', 191)->nullable());
-        }
+        $this->scopeColumn($connection, $table);
         $this->unique($connection, $table, [$model->getKeyName(), 'owner_scope_key']);
         $ownership = $definition->ownership;
         if ($ownership->strategy === 'captured' && ! $schema->hasColumn($table, 'owner_reference')) {
@@ -47,9 +48,7 @@ final readonly class OwnershipSchema
             if (! $schema->hasTable($pivot)) {
                 throw new OwnershipSchemaNotReady('The concrete ownership pivot must be supplied by its host migration.');
             }
-            if (! $schema->hasColumn($pivot, 'owner_scope_key')) {
-                $schema->table($pivot, static fn (Blueprint $table) => $table->string('owner_scope_key', 191)->nullable());
-            }
+            $this->scopeColumn($connection, $pivot);
             $this->unique($connection, $pivot, [$ownership->resourceKey ?? throw new OwnershipConfigurationInvalid]);
         }
         if ($ownership->strategy === 'column' || $ownership->strategy === 'pivot') {
@@ -85,7 +84,7 @@ final readonly class OwnershipSchema
         $connection = $model->getConnection();
         $ownership = $definition->ownership;
         if ($connection->getDriverName() !== 'sqlite') {
-            $connection->getSchemaBuilder()->table($model->getTable(), static fn (Blueprint $table) => $table->string('owner_scope_key', 191)->nullable(false)->change());
+            $this->scopeColumn($connection, $model->getTable(), true);
             if ($ownership->strategy === 'captured' && ! $definition->allowsCentral) {
                 $connection->getSchemaBuilder()->table($model->getTable(), static fn (Blueprint $table) => $table->json('owner_reference')->nullable(false)->change());
             }
@@ -124,7 +123,7 @@ final readonly class OwnershipSchema
         if ($ownership->strategy === 'pivot') {
             $pivot = $ownership->table ?? throw new OwnershipConfigurationInvalid;
             if ($connection->getDriverName() !== 'sqlite') {
-                $connection->getSchemaBuilder()->table($pivot, static fn (Blueprint $table) => $table->string('owner_scope_key', 191)->nullable(false)->change());
+                $this->scopeColumn($connection, $pivot, true);
             }
             $resourceKey = $ownership->resourceKey ?? throw new OwnershipConfigurationInvalid;
             $ownerKey = $ownership->ownerKey ?? throw new OwnershipConfigurationInvalid;
@@ -142,9 +141,113 @@ final readonly class OwnershipSchema
         $this->assertReady($resource);
     }
 
+    /** Keep canonical partition bytes exact without consuming four bytes per indexed character. */
+    private function scopeColumn(Connection $connection, string $table, bool $required = false): void
+    {
+        if ($connection->transactionLevel() !== 0) {
+            throw new OwnershipConfigurationInvalid('Partition DDL cannot join a caller transaction.');
+        }
+        $schema = $connection->getSchemaBuilder();
+        $existing = array_find($schema->getColumns($table), static fn (array $column): bool => $column['name'] === 'owner_scope_key');
+        $mysql = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true);
+        if ($existing !== null && $existing['generation'] !== null) {
+            throw new OwnershipConfigurationInvalid('Generated partition columns require a reviewed migration.');
+        }
+        $convert = $mysql && $existing !== null && $existing['collation'] !== 'ascii_bin';
+        if ($convert) {
+            $this->assertScopeEncodingChange($connection, $table);
+        }
+        if ($existing !== null && ! $convert && (! $required || ! $existing['nullable'])) {
+            return;
+        }
+        $nullable = $existing['nullable'] ?? true;
+        if ($required) {
+            $nullable = false;
+        }
+        $default = $this->scopeDefault($connection, $existing['default'] ?? null);
+        $schema->table($table, static function (Blueprint $blueprint) use ($existing, $mysql, $nullable, $default): void {
+            $column = $blueprint->string('owner_scope_key', 191)->nullable($nullable);
+            if ($mysql) {
+                $column->charset('ascii')->collation('ascii_bin');
+            }
+            if ($existing !== null) {
+                if ($default !== null) {
+                    $column->default($default);
+                }
+                if ($existing['comment'] !== null) {
+                    $column->comment($existing['comment']);
+                }
+                $column->change();
+            }
+        });
+    }
+
+    /** Preserve canonical literal defaults without executing database-supplied SQL expressions. */
+    private function scopeDefault(Connection $connection, mixed $default): ?string
+    {
+        if ($default === null) {
+            return null;
+        }
+        if (is_string($default)) {
+            $quoted = $connection->getDriverName() === 'pgsql'
+                || ($connection instanceof MySqlConnection && $connection->isMaria());
+            if ($quoted) {
+                if (preg_match('/\ANULL(?:::(?:character varying|text)(?:\([0-9]+\))?)?\z/D', $default) === 1) {
+                    return null;
+                }
+                if (preg_match("/\A'(central|owner:[a-f0-9]{64})'(?:::(?:character varying|text)(?:\([0-9]+\))?)?\z/D", $default, $matches) === 1) {
+                    return $matches[1];
+                }
+            } elseif (preg_match('/\A(?:central|owner:[a-f0-9]{64})\z/D', $default) === 1) {
+                return $default;
+            }
+        }
+        throw new OwnershipConfigurationInvalid('Partition defaults require canonical literals or a reviewed migration.');
+    }
+
+    /** Reject lossy conversion or implicit removal of any host partition foreign key. */
+    private function assertScopeEncodingChange(Connection $connection, string $table): void
+    {
+        foreach ($connection->table($table)->useWritePdo()->whereNotNull('owner_scope_key')->select('owner_scope_key')->cursor() as $row) {
+            $key = $row->owner_scope_key;
+            if (! is_string($key) || preg_match('/\A(?:central|owner:[a-f0-9]{64})\z/D', $key) !== 1) {
+                throw new OwnershipConfigurationInvalid('Partition encoding changes require canonical scope keys.');
+            }
+        }
+        $schema = $connection->getSchemaBuilder();
+        foreach ($schema->getForeignKeys($table) as $foreign) {
+            if (in_array('owner_scope_key', $foreign['columns'], true)) {
+                throw new OwnershipConfigurationInvalid('Partition foreign keys require a reviewed migration before changing their encoding.');
+            }
+        }
+        [$database, $logicalTable] = $schema->parseSchemaAndTable($table);
+        $incoming = $connection->selectOne('SELECT 1 AS dependency FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ? AND REFERENCED_COLUMN_NAME = ? LIMIT 1', [$database ?? $connection->getDatabaseName(), $connection->getTablePrefix().$logicalTable, 'owner_scope_key'], false);
+        if ($incoming !== null) {
+            throw new OwnershipConfigurationInvalid('Partition foreign keys require a reviewed migration before changing their encoding.');
+        }
+    }
+
     /** Recheck physical constraints without treating a marker as sufficient schema evidence. */
     public function assertReady(string $resource): void
     {
+        $columnTypes = [];
+        $foreignKeys = [];
+        $verified = [];
+        $this->assertResourceReady($resource, $columnTypes, $foreignKeys, $verified);
+    }
+
+    /**
+     * Share metadata only inside this live graph inspection, never across admissions.
+     *
+     * @param  array<string, array<string, string>>  $columnTypes
+     * @param  array<string, list<ForeignKey>>  $foreignKeys
+     * @param  array<string, true>  $verified
+     */
+    private function assertResourceReady(string $resource, array &$columnTypes, array &$foreignKeys, array &$verified): void
+    {
+        if (isset($verified[$resource])) {
+            return;
+        }
         $definition = $this->resources->get($resource);
         $model = new $definition->model;
         $connection = $model->getConnection();
@@ -157,14 +260,14 @@ final readonly class OwnershipSchema
             $owner = new $class;
             $target = $ownership->strategy === 'pivot' ? ($ownership->table ?? throw new OwnershipConfigurationInvalid) : $table;
             $field = $ownership->strategy === 'pivot' ? ($ownership->ownerKey ?? throw new OwnershipConfigurationInvalid) : ($ownership->foreignKey ?? throw new OwnershipConfigurationInvalid);
-            $this->assertNativeKey($connection, $target, $field, $owner->getTable(), $owner->getKeyName());
-            $this->assertForeign($connection, $target, [$field], $owner->getTable(), [$owner->getKeyName()]);
+            $this->assertNativeKey($connection, $target, $field, $owner->getTable(), $owner->getKeyName(), $columnTypes);
+            $this->assertForeign($connection, $target, [$field], $owner->getTable(), [$owner->getKeyName()], $foreignKeys);
             if ($ownership->strategy === 'pivot') {
                 $resourceKey = $ownership->resourceKey ?? throw new OwnershipConfigurationInvalid;
                 $this->constraints->assertProtected($connection, $target, true);
                 $this->assertUnique($connection, $target, [$resourceKey]);
-                $this->assertNativeKey($connection, $target, $resourceKey, $table, $model->getKeyName());
-                $this->assertForeign($connection, $target, [$resourceKey], $table, [$model->getKeyName()]);
+                $this->assertNativeKey($connection, $target, $resourceKey, $table, $model->getKeyName(), $columnTypes);
+                $this->assertForeign($connection, $target, [$resourceKey], $table, [$model->getKeyName()], $foreignKeys);
             }
         } elseif ($ownership->strategy === 'captured' && ! $connection->getSchemaBuilder()->hasColumn($table, 'owner_reference')) {
             throw new OwnershipSchemaNotReady('Captured storage requires its complete scalar owner reference.');
@@ -173,13 +276,14 @@ final readonly class OwnershipSchema
             if (! $relation instanceof MorphTo) {
                 $parentClass = $this->resources->get($definition->parents()[0])->model;
                 $parent = new $parentClass;
-                $this->assertNativeKey($connection, $table, $relation->getForeignKeyName(), $parent->getTable(), $parent->getKeyName());
-                $this->assertForeign($connection, $table, [$relation->getForeignKeyName()], $parent->getTable(), [$parent->getKeyName()]);
+                $this->assertNativeKey($connection, $table, $relation->getForeignKeyName(), $parent->getTable(), $parent->getKeyName(), $columnTypes);
+                $this->assertForeign($connection, $table, [$relation->getForeignKeyName()], $parent->getTable(), [$parent->getKeyName()], $foreignKeys);
             }
             foreach ($definition->parents() as $parent) {
-                $this->assertReady($parent);
+                $this->assertResourceReady($parent, $columnTypes, $foreignKeys, $verified);
             }
         }
+        $verified[$resource] = true;
     }
 
     /** @param list<string> $columns */
@@ -193,11 +297,28 @@ final readonly class OwnershipSchema
         throw new OwnershipSchemaNotReady('The canonical primary ownership uniqueness constraint is missing.');
     }
 
-    /** Preserve the owner's exact native key storage rather than relying on driver coercion. */
-    private function assertNativeKey(Connection $connection, string $table, string $column, string $parent, string $parentColumn): void
+    /**
+     * Preserve native types while reading each table's columns once per live inspection.
+     *
+     * @param  array<string, array<string, string>>|null  $columnTypes
+     *
+     * @param-out array<string, array<string, string>> $columnTypes
+     */
+    private function assertNativeKey(Connection $connection, string $table, string $column, string $parent, string $parentColumn, ?array &$columnTypes = null): void
     {
-        $schema = $connection->getSchemaBuilder();
-        if ($schema->getColumnType($table, $column, true) !== $schema->getColumnType($parent, $parentColumn, true)) {
+        $columnTypes ??= [];
+        foreach ([$table, $parent] as $target) {
+            $identity = spl_object_id($connection).':'.$target;
+            if (! array_key_exists($identity, $columnTypes)) {
+                $columnTypes[$identity] = [];
+                foreach ($connection->getSchemaBuilder()->getColumns($target) as $definition) {
+                    $columnTypes[$identity][strtolower($definition['name'])] = $definition['type'];
+                }
+            }
+        }
+        $native = $columnTypes[spl_object_id($connection).':'.$table][strtolower($column)] ?? null;
+        $expected = $columnTypes[spl_object_id($connection).':'.$parent][strtolower($parentColumn)] ?? null;
+        if ($native === null || $expected === null || $native !== $expected) {
             throw new OwnershipSchemaNotReady('An ownership foreign key differs from its canonical native key type.');
         }
     }
@@ -217,10 +338,16 @@ final readonly class OwnershipSchema
 
     /** @param list<string> $columns
      * @param  list<string>  $parentColumns
+     * @param  array<string, list<ForeignKey>>|null  $foreignKeys
+     *
+     * @param-out array<string, list<ForeignKey>> $foreignKeys
      */
-    private function assertForeign(Connection $connection, string $table, array $columns, string $parent, array $parentColumns): void
+    private function assertForeign(Connection $connection, string $table, array $columns, string $parent, array $parentColumns, ?array &$foreignKeys = null): void
     {
-        foreach ($connection->getSchemaBuilder()->getForeignKeys($table) as $foreign) {
+        $foreignKeys ??= [];
+        $identity = spl_object_id($connection).':'.$table;
+        $foreignKeys[$identity] ??= $connection->getSchemaBuilder()->getForeignKeys($table);
+        foreach ($foreignKeys[$identity] as $foreign) {
             if ($foreign['columns'] === $columns && $foreign['foreign_table'] === $connection->getTablePrefix().$parent && $foreign['foreign_columns'] === $parentColumns) {
                 return;
             }

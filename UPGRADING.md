@@ -6,6 +6,18 @@ Light requires PHP 8.4 and Laravel 13. Replace retired package Actions, transpor
 
 Upgrade the selected family together. Preserve stored identities, migration ownership, source connections, queue state and operation recovery journals. Review and apply the relevant storage/adoption procedure before accepting writes; installing new code alone does not migrate existing data.
 
+The unreleased 7.x guard corrections enforce exact partition and morph keys,
+immutable scalar bytes, and MariaDB native UUID text identities. Existing stored
+triggers need the explicit `OwnershipAdoptionCoordinator::refreshConstraints()`
+procedure in [README.md](README.md), under authorized maintenance and the original
+active plan. Use a reviewed nontransactional host migration and the dedicated
+`ownership.constraints.refresh` purpose. Do not prepare a new plan or reuse
+ordinary activation as a trigger refresh. Interrupted refreshes retain their
+original conservation digests and must resume against that same resource state.
+An earlier experimental replacement-plan attempt may already have left an
+interrupted run; preserve that evidence for reviewed recovery rather than
+deleting its run, mappings or source markers.
+
 ## Historical upgrade notes
 
 The following sections describe pre-Light releases and their old APIs, compatibility windows and commands. They remain useful for understanding existing installations, but are not Light setup instructions. The old Tenancy bridge, DTO/Action contracts, package HTTP and type generation are retired in Light.

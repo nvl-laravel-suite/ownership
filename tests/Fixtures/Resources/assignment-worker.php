@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Capsule\Manager;
 use Illuminate\Database\QueryException;
+use Nvl\Ownership\Tests\Fixtures\NativeDatabaseSource;
 
 require dirname(__DIR__, 6).'/vendor/autoload.php';
 
@@ -15,6 +16,7 @@ $database = new Manager;
 $database->addConnection($configuration);
 $connection = $database->getConnection();
 $connection->getPdo();
+NativeDatabaseSource::inspect($connection);
 fwrite(STDOUT, "ready\n");
 fflush(STDOUT);
 $deadline = microtime(true) + 10;

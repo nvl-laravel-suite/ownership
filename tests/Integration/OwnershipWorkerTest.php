@@ -15,6 +15,7 @@ use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\NativeDatabaseSource;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeEvent;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeListener;
@@ -27,8 +28,8 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Symfony\Component\Process\Process;
 
 it('preserves captured ownership through a real worker retry exhaustion and raw quarantine', function (string $driver): void {
-    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
-        $this->markTestSkipped('Requires the explicitly isolated PostgreSQL persistence database.');
+    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+        $this->markTestSkipped('Requires the explicitly isolated native persistence database.');
     }
     $redisPort = getenv('NVL_OWNERSHIP_TEST_REDIS_PORT');
     if ($driver === 'redis' && (! is_string($redisPort) || ! ctype_digit($redisPort))) {
@@ -90,7 +91,7 @@ it('preserves captured ownership through a real worker retry exhaustion and raw 
             unset($pending);
         });
     }
-    $worker = new Process([PHP_BINARY, __DIR__.'/../Fixtures/Queue/worker.php', json_encode(config('database.connections.sqlite'), JSON_THROW_ON_ERROR), json_encode($options, JSON_THROW_ON_ERROR)], timeout: 40);
+    $worker = new Process([PHP_BINARY, __DIR__.'/../Fixtures/Queue/worker.php', json_encode(NativeDatabaseSource::capture(DB::connection('sqlite')), JSON_THROW_ON_ERROR), json_encode($options, JSON_THROW_ON_ERROR)], timeout: 40);
     $worker->mustRun();
     expect($worker->getOutput())->toBe('worker-complete');
     expect(DB::table('jobs')->count())->toBe(0)

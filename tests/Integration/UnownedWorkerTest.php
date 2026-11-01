@@ -9,6 +9,7 @@ use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\NativeDatabaseSource;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\UnownedProbeJob;
@@ -19,8 +20,8 @@ use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Symfony\Component\Process\Process;
 
 it('runs explicit global jobs and native batch callbacks in a separate worker without owned restoration', function (): void {
-    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
-        $this->markTestSkipped('Requires the explicitly dedicated PostgreSQL worker source.');
+    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+        $this->markTestSkipped('Requires the explicitly dedicated native worker source.');
     }
     $this->allowOwners();
     ResourceScenario::install($this->app);
@@ -38,7 +39,7 @@ it('runs explicit global jobs and native batch callbacks in a separate worker wi
     $wire = json_decode($raw, true, flags: JSON_THROW_ON_ERROR);
     $wire['data']['nvl_ownership'] = $envelope->toArray();
     Queue::connection('database')->pushRaw(json_encode($wire, JSON_THROW_ON_ERROR));
-    $worker = new Process([PHP_BINARY, __DIR__.'/../Fixtures/Queue/worker.php', json_encode(config('database.connections.sqlite'), JSON_THROW_ON_ERROR)], timeout: 40);
+    $worker = new Process([PHP_BINARY, __DIR__.'/../Fixtures/Queue/worker.php', json_encode(NativeDatabaseSource::capture(DB::connection('sqlite')), JSON_THROW_ON_ERROR)], timeout: 40);
     $worker->mustRun();
     expect($worker->getOutput())->toBe('worker-complete')
         ->and(DB::table('jobs')->count())->toBe(0)

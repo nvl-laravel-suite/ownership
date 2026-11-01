@@ -7,6 +7,14 @@ description: Use when integrating, testing or reviewing nvl/ownership, native ow
 
 Ownership supplies the explicitly enabled enforcing runtime over Core's neutral ports. Target PHP `^8.4` and Laravel `^13.0`. NVL Auth is optional; the deprecated Tenancy bridge supplies no authority or fallback. Consumers own their DTOs, Actions, controllers and HTTP integration.
 
+## Read by task
+
+- [Installation and publication](references/installation.md): exact provider, config and protocol migration tags; both opt-in switches.
+- [Consumer recipes](references/usage.md): declare a native resource, bind entry policy, admit reads/writes, capture queue work and plan reviewed adoption.
+- [Public API](references/api.md): contract namespaces, callback types, recovery operations and complete argument/return shapes.
+
+Choose the host's actual owner key type, storage topology and access rules before writing an adapter. A package skill cannot decide membership, central authority or a historical data mapping on the application's behalf.
+
 ## Host declaration and admission
 
 Configure canonical model subclasses before provider boot. Implement the model ownership contract/trait and return an OwnershipDefinition for the native owner column, concrete primary pivot or supported inherited strategy. Register owner/actor classes in `nvl-core.owners` and preserve native keys and Laravel morph identities. Matching storage constraints are the host's responsibility; grants are distinct from primary ownership.

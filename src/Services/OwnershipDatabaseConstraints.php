@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Nvl\Ownership\Services;
 
 use Illuminate\Database\Connection;
+use Illuminate\Database\MySqlConnection;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Services\OwnershipConstraintInspector;
@@ -28,15 +29,22 @@ final readonly class OwnershipDatabaseConstraints
     {
         $wrap = $connection->getQueryGrammar()->wrap(...);
         $scope = 'NEW.'.$wrap('owner_scope_key');
-        $valid = match ($connection->getDriverName()) {
+        $driver = $connection instanceof MySqlConnection && $connection->isMaria() ? 'mariadb' : $connection->getDriverName();
+        $valid = match ($driver) {
             'pgsql' => $scope." ~ '^owner:[a-f0-9]{64}$'",
             'mysql' => "REGEXP_LIKE({$scope}, '^owner:[a-f0-9]{64}$', 'c')",
             'mariadb' => $scope." REGEXP BINARY '^owner:[a-f0-9]{64}$'",
             'sqlite' => 'length('.$scope.") = 70 AND substr({$scope}, 1, 6) = 'owner:' AND substr({$scope}, 7) NOT GLOB '*[^a-f0-9]*'",
             default => throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.'),
         };
+        if ($driver !== 'sqlite') {
+            $valid = 'length('.$scope.') = 70 AND ('.$valid.')';
+        }
         if ($central) {
-            $valid = '('.$valid.' OR '.$scope." = 'central')";
+            $centralIdentity = in_array($driver, ['mysql', 'mariadb'], true)
+                ? 'CAST('.$scope." AS BINARY) = CAST('central' AS BINARY)"
+                : $scope." = 'central'";
+            $valid = '('.$valid.' OR (length('.$scope.') = 7 AND '.$centralIdentity.'))';
         }
         $invalid = $scope.' IS NULL OR NOT ('.$valid.')';
         if ($parentTable !== null && $foreignKey !== null && $parentKey !== null) {
@@ -44,6 +52,7 @@ final readonly class OwnershipDatabaseConstraints
             $invalid .= ' OR NOT EXISTS (SELECT 1 FROM '.$parent.' WHERE '.$wrap($parentKey).' = NEW.'.$wrap($foreignKey).' AND '.$wrap('owner_scope_key').' = '.$scope.')';
         }
         $this->trigger($connection, $table, 'insert', 'valid', $invalid);
+        $binary = $this->binaryColumns($connection, $table, $immutable);
         $changes = [];
         foreach ($immutable as $column) {
             $old = 'OLD.'.$wrap($column);
@@ -54,7 +63,7 @@ final readonly class OwnershipDatabaseConstraints
             }
             $changes[] = match ($connection->getDriverName()) {
                 'pgsql' => $old.' IS DISTINCT FROM '.$new,
-                'mysql', 'mariadb' => 'NOT ('.$old.' <=> '.$new.')',
+                'mysql', 'mariadb' => $this->mysqlDifference($old, $new, isset($binary[$column])),
                 default => $old.' IS NOT '.$new,
             };
         }
@@ -69,12 +78,13 @@ final readonly class OwnershipDatabaseConstraints
     public function freeze(Connection $connection, string $table, array $fields, string $statusColumn = 'status', array $afterStatuses = [], array $eraseStatuses = [], bool $retainStatuses = false): void
     {
         $grammar = $connection->getQueryGrammar();
+        $binary = $this->binaryColumns($connection, $table, $fields);
         $changes = [];
         foreach ($fields as $column) {
             $old = 'OLD.'.$grammar->wrap($column);
             $new = 'NEW.'.$grammar->wrap($column);
             $different = match ($connection->getDriverName()) {
-                'pgsql' => 'to_jsonb('.$old.') IS DISTINCT FROM to_jsonb('.$new.')','mysql','mariadb' => 'NOT ('.$old.' <=> '.$new.')',default => $old.' IS NOT '.$new
+                'pgsql' => 'to_jsonb('.$old.') IS DISTINCT FROM to_jsonb('.$new.')','mysql','mariadb' => $this->mysqlDifference($old, $new, isset($binary[$column])),default => $old.' IS NOT '.$new
             };
             if ($eraseStatuses !== []) {
                 $statuses = implode(',', array_map(fn (string $v): string => $connection->getPdo()->quote($v), $eraseStatuses));
@@ -99,13 +109,14 @@ final readonly class OwnershipDatabaseConstraints
      */
     public function freezeAssigned(Connection $connection, string $table, array $fields, ?string $statusColumn = null, array $afterStatuses = []): void
     {
+        $binary = $this->binaryColumns($connection, $table, $fields);
         $changes = [];
         foreach ($fields as $field) {
             $old = 'OLD.'.$connection->getQueryGrammar()->wrap($field);
             $new = 'NEW.'.$connection->getQueryGrammar()->wrap($field);
             $different = match ($connection->getDriverName()) {
                 'pgsql' => $old.' IS DISTINCT FROM '.$new,
-                'mysql', 'mariadb' => 'NOT ('.$old.' <=> '.$new.')',
+                'mysql', 'mariadb' => $this->mysqlDifference($old, $new, isset($binary[$field])),
                 default => $old.' IS NOT '.$new,
             };
             $changes[] = '('.$old.' IS NOT NULL AND ('.$different.'))';
@@ -164,17 +175,22 @@ final readonly class OwnershipDatabaseConstraints
         $grammar = $connection->getQueryGrammar();
         $type = 'NEW.'.$grammar->wrap($typeColumn);
         $key = 'NEW.'.$grammar->wrap($keyColumn);
+        $driver = $connection instanceof MySqlConnection && $connection->isMaria() ? 'mariadb' : $connection->getDriverName();
         $valid = [];
         foreach ($targets as $target) {
             $native = $grammar->wrap($target['key']);
-            $text = match ($connection->getDriverName()) {
+            $text = match ($driver) {
                 'pgsql' => '(CAST('.$native.' AS TEXT) COLLATE "C") = ('.$key.' COLLATE "C")',
                 'sqlite' => '(CAST('.$native.' AS TEXT) COLLATE BINARY) = ('.$key.' COLLATE BINARY)',
-                'mysql','mariadb' => 'CAST('.$native.' AS BINARY) = CAST('.$key.' AS BINARY)',
+                'mysql' => 'CAST('.$native.' AS BINARY) = CAST('.$key.' AS BINARY)',
+                'mariadb' => 'CAST(CAST('.$native.' AS CHAR) AS BINARY) = CAST(CAST('.$key.' AS CHAR) AS BINARY)',
                 default => throw new OwnershipConfigurationInvalid('Unsupported polymorphic ownership constraint driver.'),
             };
             $morph = $connection->getPdo()->quote($target['type']);
-            $valid[] = '('.$type.' = '.$morph.' AND EXISTS (SELECT 1 FROM '.$grammar->wrapTable($target['table']).' WHERE '.$text.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').'))';
+            $morphIdentity = in_array($driver, ['mysql', 'mariadb'], true)
+                ? 'CAST('.$type.' AS BINARY) = CAST('.$morph.' AS BINARY)'
+                : $type.' = '.$morph;
+            $valid[] = '('.$morphIdentity.' AND EXISTS (SELECT 1 FROM '.$grammar->wrapTable($target['table']).' WHERE '.$text.' AND '.$grammar->wrap('owner_scope_key').' = NEW.'.$grammar->wrap('owner_scope_key').'))';
         }
         $invalid = $type.' IS NULL OR '.$key.' IS NULL OR NOT ('.($valid === [] ? '0=1' : implode(' OR ', $valid)).')';
         $existing = str_replace('NEW.', $grammar->wrap('nvl_existing').'.', $invalid);
@@ -184,6 +200,55 @@ final readonly class OwnershipDatabaseConstraints
         foreach (['insert', 'update'] as $event) {
             $this->trigger($connection, $table, $event, 'polymorphic:'.$typeColumn.':'.$keyColumn, $invalid);
         }
+    }
+
+    /**
+     * Keep JSON's native equality while comparing other stored values without collation coercion.
+     *
+     * @param  list<string>  $fields
+     * @return array<string, true>
+     */
+    private function binaryColumns(Connection $connection, string $table, array $fields): array
+    {
+        if (! in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return [];
+        }
+        $schema = $connection->getSchemaBuilder();
+        $binary = [];
+        foreach ($schema->getColumns($table) as $column) {
+            if (in_array($column['name'], $fields, true) && ! in_array(strtolower($column['type_name']), ['json', 'jsonb'], true)) {
+                $binary[$column['name']] = true;
+            }
+        }
+        if (! $connection instanceof MySqlConnection || ! $connection->isMaria() || $binary === []) {
+            return $binary;
+        }
+        [$namespace, $name] = $schema->parseSchemaAndTable($table);
+        $constraints = $connection->select(
+            'SELECT CHECK_CLAUSE AS clause FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = ?',
+            [$namespace ?? $connection->getDatabaseName(), $connection->getTablePrefix().$name],
+            false,
+        );
+        foreach (array_keys($binary) as $column) {
+            $identifier = '`'.str_replace('`', '``', $column).'`';
+            $pattern = '/^\(*\s*json_valid\(\s*'.preg_quote($identifier, '/').'\s*\)\s*\)*$/i';
+            if (array_any($constraints, static fn (mixed $constraint): bool => is_object($constraint) && isset($constraint->clause) && is_string($constraint->clause) && preg_match($pattern, $constraint->clause) === 1)) {
+                unset($binary[$column]);
+            }
+        }
+
+        return $binary;
+    }
+
+    /** Retain null-safe equality while rejecting byte changes hidden by SQL collations. */
+    private function mysqlDifference(string $old, string $new, bool $binary): string
+    {
+        if ($binary) {
+            $old = 'CAST('.$old.' AS BINARY)';
+            $new = 'CAST('.$new.' AS BINARY)';
+        }
+
+        return 'NOT ('.$old.' <=> '.$new.')';
     }
 
     /** Retain a separate stable identity for each package-declared concrete reference. */

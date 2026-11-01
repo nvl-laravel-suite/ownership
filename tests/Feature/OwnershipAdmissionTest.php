@@ -31,11 +31,18 @@ it('distinguishes an absent optional store from malformed or missing installed i
     $connection->enableQueryLog();
     $connection->flushQueryLog();
     $identity = $connections->optionalIdentity($connection);
-    $queries = array_column($connection->getQueryLog(), 'query');
+    $queries = $connection->getQueryLog();
     $connection->disableQueryLog();
     expect($identity)->toBeString()
-        ->and(count(array_filter($queries, static fn (string $sql): bool => str_contains($sql, 'sqlite_master') && str_contains($sql, 'nvl_ownership_stores'))))->toBe(1);
+        ->and(count(array_filter($queries, static fn (array $query): bool => preg_match('/\b(?:sqlite_master|information_schema|pg_catalog|pg_class)\b/i', $query['query']) === 1
+            && (str_contains($query['query'], 'nvl_ownership_stores') || in_array('nvl_ownership_stores', $query['bindings'], true)))))->toBe(1)
+        ->and($queries)->toHaveCount(2);
 
+    if ($connection->getSchemaBuilder()->getColumnType('nvl_ownership_stores', 'store_id') === 'uuid') {
+        Schema::table('nvl_ownership_stores', static function (Blueprint $table): void {
+            $table->string('store_id', 36)->change();
+        });
+    }
     DB::table('nvl_ownership_stores')->where('id', 1)->update(['store_id' => 'malformed']);
     expect(fn () => $connections->optionalIdentity($connection))->toThrow(OwnershipSchemaNotReady::class);
     DB::table('nvl_ownership_stores')->where('id', 1)->delete();

@@ -12,16 +12,74 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use stdClass;
 
 /**
  * Independently compares every physical cutover record with its reviewed canonical owner.
  *
  * @internal
+ *
+ * @phpstan-type ResourceSnapshot array{store: string, table: string, key: string, rows: int, digest: string}
+ * @phpstan-type Snapshot array<string, ResourceSnapshot>
  */
 final readonly class OwnershipAdoptionConservation
 {
     /** Retain immutable reviewed mappings and exact canonical source readers. */
     public function __construct(private OwnershipAdoptionStore $mappings, private OwnershipResourceRegistry $resources, private OwnershipRecordReader $records, private OwnershipCanonicalResolver $canonical, private OwnershipConnections $connections) {}
+
+    /**
+     * Validate current canonical ownership and hash all raw history without retaining payloads.
+     *
+     * @return Snapshot
+     */
+    public function snapshot(OwnershipAdoptionAdapter $adapter): array
+    {
+        $snapshot = [];
+        foreach ($adapter->resources() as $key) {
+            $definition = $this->resources->get($key);
+            $model = new $definition->model;
+            $connection = $model->getConnection();
+            $digest = hash_init('sha256');
+            $count = 0;
+            foreach ($connection->table($model->getTable())->useWritePdo()->lazyById(250, $model->getKeyName()) as $row) {
+                $this->canonical->fromPersisted($this->records->hydrate($model, $row), $definition);
+                $bytes = $this->rowBytes($row);
+                hash_update($digest, strlen($bytes).':'.$bytes);
+                $count++;
+            }
+            $snapshot[$key] = ['store' => $this->connections->identity($connection), 'table' => $model->getTable(), 'key' => $model->getKeyName(), 'rows' => $count, 'digest' => hash_final($digest)];
+        }
+
+        return $snapshot;
+    }
+
+    /** Frame raw scalar values, hashing binary streams before their cursor row is released. */
+    private function rowBytes(stdClass $row): string
+    {
+        $attributes = get_object_vars($row);
+        ksort($attributes, SORT_STRING);
+        foreach ($attributes as $name => $value) {
+            if (is_resource($value)) {
+                if (get_resource_type($value) !== 'stream') {
+                    throw new OwnershipConfigurationInvalid('Constraint refresh requires a binary resource stream.');
+                }
+                $position = ftell($value);
+                $digest = hash_init('sha256');
+                if ($position === false || fseek($value, 0) !== 0) {
+                    throw new OwnershipConfigurationInvalid('Constraint refresh could not read a binary resource value.');
+                }
+                hash_update_stream($digest, $value);
+                if (fseek($value, $position) !== 0) {
+                    throw new OwnershipConfigurationInvalid('Constraint refresh could not restore a binary resource stream.');
+                }
+                $attributes[$name] = ['binary_stream_digest' => hash_final($digest)];
+            } elseif ($value !== null && ! is_scalar($value)) {
+                throw new OwnershipConfigurationInvalid('Constraint refresh requires scalar database values.');
+            }
+        }
+
+        return serialize($attributes);
+    }
 
     /** Compare all rows, including historical and soft-deleted records, in both directions. */
     public function verify(OwnershipAdoptionPlan $plan, OwnershipAdoptionAdapter $adapter): OwnershipVerification

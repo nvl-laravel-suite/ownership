@@ -22,7 +22,8 @@ it('keeps unowned persistence native with the optional runtime enabled or disabl
         $level = DB::transactionLevel();
     });
     $model = UnownedAsset::query()->create(['id' => 1, 'name' => 'native']);
-    expect($level)->toBe(0)
+    expect($model->getKey())->toBe(1)
+        ->and($level)->toBe(0)
         ->and($model->deleteQuietly())->toBeTrue()
         ->and(UnownedAsset::query()->count())->toBe(0);
 })->with([[false, false], [false, true], [true, false], [true, true]]);
