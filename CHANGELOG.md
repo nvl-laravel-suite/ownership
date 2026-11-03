@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [7.0.0] - 2026-11-03
+
+- Adopt the reviewed NVL 7 family for PHP 8.4+ and Laravel 13, with compatible required and optional NVL peers. Review the package upgrade guide before deployment.
+
 ### Fixed
 
 - Reject padded/newline partition keys, forged morph aliases and case/padding changes to immutable scalar fields while preserving native JSON equality. Compare MariaDB UUID references through their canonical text on the actual source, including MySQL-labelled connections.
