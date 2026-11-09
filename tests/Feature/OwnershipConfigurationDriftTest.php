@@ -10,14 +10,17 @@ use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
 use Nvl\Ownership\Services\OwnerIdentityResolver;
 use Nvl\Ownership\Services\OwnershipAdoptionCoordinator;
 use Nvl\Ownership\Services\OwnershipAdoptionRegistry;
+use Nvl\Ownership\Services\OwnershipConfigurationFingerprint;
 use Nvl\Ownership\Tests\Fixtures\Adoption\Record;
 use Nvl\Ownership\Tests\Fixtures\Adoption\RecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\OwnershipStorageTables;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
@@ -65,6 +68,28 @@ it('rejects resource morph identity drift before resuming package callbacks', fu
         Relation::morphMap($previous, false);
     }
 });
+
+it('reads each store once per fingerprint operation without retaining its identity across calls', function (bool $graph): void {
+    app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('fixture.other', 'fixture', ColumnAsset::class, ColumnAsset::ownershipDefinition()));
+    $fingerprints = app(OwnershipConfigurationFingerprint::class);
+    $read = $graph
+        ? fn (): string => $fingerprints->hash(['fixture.records', 'fixture.other'])
+        : fn (): string => $fingerprints->fingerprint('fixture.records');
+    $connection = DB::connection();
+    $connection->enableQueryLog();
+    try {
+        $before = $read();
+        expect($connection->getQueryLog())->toHaveCount(2);
+
+        $connection->table(OwnershipStorageTables::Stores)->where('id', 1)->update(['store_id' => '550e8400-e29b-41d4-a716-446655440000']);
+        $connection->flushQueryLog();
+        expect($read())->not->toBe($before)
+            ->and($connection->getQueryLog())->toHaveCount(2);
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+})->with(['single resource' => false, 'resource graph' => true]);
 
 it('rejects a replacement declaration after immutable preparation', function (): void {
     $plan = app(OwnershipAdoptionCoordinator::class)->prepare(['fixture'], [$this->mapping], $this->operation);

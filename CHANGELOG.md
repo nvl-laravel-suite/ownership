@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Read each participating store identity once per resource fingerprint or graph hash, and refresh those facts on the next operation.
+
 ## [7.0.0] - 2026-11-03
 
 - Adopt the reviewed NVL 7 family for PHP 8.4+ and Laravel 13, with compatible required and optional NVL peers. Review the package upgrade guide before deployment.

@@ -25,6 +25,27 @@ final readonly class OwnershipConfigurationFingerprint
      */
     public function fingerprint(string $resource, array $stores = []): string
     {
+        return $this->resourceFingerprint($resource, $stores);
+    }
+
+    /** @param list<string> $resources */
+    public function hash(array $resources): string
+    {
+        sort($resources);
+        $fingerprints = [];
+        $stores = [];
+        foreach ($resources as $resource) {
+            $fingerprints[$resource] = $this->resourceFingerprint($resource, $stores);
+        }
+
+        return hash('sha256', json_encode($fingerprints, JSON_THROW_ON_ERROR));
+    }
+
+    /** Reuse actual store facts only within this fingerprint or graph-hash operation.
+     * @param  array<int, string>  $stores
+     */
+    private function resourceFingerprint(string $resource, array &$stores): string
+    {
         $definition = $this->resources->get($resource);
         $model = new $definition->model;
         $owner = $definition->ownership->owner;
@@ -49,21 +70,9 @@ final readonly class OwnershipConfigurationFingerprint
         ], JSON_THROW_ON_ERROR));
     }
 
-    /** @param list<string> $resources */
-    public function hash(array $resources): string
-    {
-        sort($resources);
-        $fingerprints = [];
-        foreach ($resources as $resource) {
-            $fingerprints[$resource] = $this->fingerprint($resource);
-        }
-
-        return hash('sha256', json_encode($fingerprints, JSON_THROW_ON_ERROR));
-    }
-
     /** @param array<int, string> $stores */
-    private function store(Connection $connection, array $stores): string
+    private function store(Connection $connection, array &$stores): string
     {
-        return $stores[spl_object_id($connection)] ?? $this->connections->identity($connection);
+        return $stores[spl_object_id($connection)] ??= $this->connections->identity($connection);
     }
 }
