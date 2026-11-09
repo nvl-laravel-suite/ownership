@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [7.0.1] - 2026-11-09
+
 ### Fixed
 
 - Read each participating store identity once per resource fingerprint or graph hash, and refresh those facts on the next operation.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- reuse store identity within fingerprint operations
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.0] - 2026-11-03
 
