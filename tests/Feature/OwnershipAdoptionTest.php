@@ -20,6 +20,8 @@ use Nvl\Ownership\Services\OwnershipAdoptionRegistry;
 use Nvl\Ownership\Services\OwnershipInstallationState;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
+use Nvl\Ownership\Tests\Fixtures\Adoption\InterruptedRecordsAdapter;
+use Nvl\Ownership\Tests\Fixtures\Adoption\InterruptedRemoteRecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Adoption\QueuedProbe;
 use Nvl\Ownership\Tests\Fixtures\Adoption\Record;
 use Nvl\Ownership\Tests\Fixtures\Adoption\RecordsAdapter;
@@ -292,6 +294,81 @@ it('keeps interrupted multi-source activation closed and resumes the identical p
     expect(count($queries))->toBeLessThan(11);
     DB::connection('ownership_remote')->table('nvl_ownership_resource_markers')->update(['generation' => (string) Str::uuid()]);
     expect(fn () => app(OwnershipInstallationState::class)->generations())->toThrow(OwnershipSchemaNotReady::class);
+});
+
+it('replays a committed backfill page and conserves populated sources through interrupted activation', function (): void {
+    $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+    {
+        public function authorize(OwnershipOperation $operation): void {}
+    });
+    $registry = new OwnershipAdoptionRegistry;
+    $registry->register('fixture', InterruptedRecordsAdapter::class);
+    $registry->register('remote', InterruptedRemoteRecordsAdapter::class);
+    $this->app->instance(OwnershipAdoptionRegistry::class, $registry);
+    $ownerB = app(OwnerIdentityResolver::class)->reference(Company::query()->findOrFail(8));
+    $assignments = ['fixture.records' => [$this->owner, $ownerB, $this->owner], 'remote.records' => [$ownerB, $this->owner, $ownerB]];
+    $mappings = [];
+    foreach (['sqlite' => 'fixture.records', 'ownership_remote' => 'remote.records'] as $connection => $resource) {
+        $database = DB::connection($connection);
+        $database->getSchemaBuilder()->table('ownership_test_records', static function (Blueprint $table): void {
+            $table->string('payload')->nullable();
+        });
+        $database->table('ownership_test_records')->where('id', 1)->update(['payload' => $resource.'-1']);
+        foreach ([2, 3] as $id) {
+            $database->table('ownership_test_records')->insert(['id' => $id, 'payload' => $resource.'-'.$id]);
+        }
+        foreach ($assignments[$resource] as $offset => $owner) {
+            $mappings[] = new OwnershipMapping($resource, (string) ($offset + 1), $owner);
+        }
+    }
+
+    $writtenRows = [];
+    Record::saved(static function (Record $record) use (&$writtenRows): void {
+        $writtenRows[] = 'fixture.records:'.$record->getKey();
+    });
+    RemoteRecord::saved(static function (RemoteRecord $record) use (&$writtenRows): void {
+        $writtenRows[] = 'remote.records:'.$record->getKey();
+    });
+    $coordinator = app(OwnershipAdoptionCoordinator::class);
+    $plan = $coordinator->prepare(['fixture', 'remote'], $mappings, $this->operation);
+    config(['ownership_test.interrupt_backfill' => 'fixture.records']);
+    expect(fn () => $coordinator->backfill($plan, 1, $this->operation))->toThrow(RuntimeException::class, 'Interrupted after a committed source page.');
+    expect(DB::table('ownership_test_records')->whereNotNull('owner_scope_key')->count())->toBe(1)
+        ->and(DB::connection('ownership_remote')->table('ownership_test_records')->whereNotNull('owner_scope_key')->count())->toBe(0)
+        ->and(fn () => app(OwnershipInstallationState::class)->generations())->toThrow(OwnershipSchemaNotReady::class)
+        ->and($coordinator->resume($plan->id))->toEqual($plan);
+    $checkpoints = json_decode(DB::table('nvl_ownership_adoption_runs')->value('checkpoints'), true, 512, JSON_THROW_ON_ERROR);
+    expect($checkpoints['adapters']['fixture']['cursor'])->toBeNull()
+        ->and($writtenRows)->toBe(['fixture.records:1'])
+        ->and($coordinator->backfill($plan, 1, $this->operation))->toBeFalse()
+        ->and($writtenRows)->toBe(['fixture.records:1', 'fixture.records:1']);
+
+    $finished = false;
+    for ($page = 0; $page < 10 && ! $finished; $page++) {
+        $finished = $coordinator->backfill($plan, 1, $this->operation);
+    }
+    expect($finished)->toBeTrue()->and($coordinator->verify($plan)->passed())->toBeTrue();
+    config(['ownership_test.interrupt' => 'remote.records']);
+    expect(fn () => $coordinator->activate($plan, $this->operation))->toThrow(RuntimeException::class)
+        ->and(fn () => app(OwnershipInstallationState::class)->generations())->toThrow(OwnershipSchemaNotReady::class);
+    config(['ownership_test.interrupt' => null]);
+    $coordinator->activate($coordinator->resume($plan->id), $this->operation);
+
+    foreach (['sqlite' => 'fixture.records', 'ownership_remote' => 'remote.records'] as $connection => $resource) {
+        $rows = DB::connection($connection)->table('ownership_test_records')->orderBy('id')->get();
+        expect($rows->pluck('id')->map(static fn ($id): int => (int) $id)->all())->toBe([1, 2, 3]);
+        foreach ($rows as $offset => $row) {
+            $owner = $assignments[$resource][$offset];
+            expect((string) $row->company_id)->toBe($owner->key)
+                ->and($row->owner_scope_key)->toBe($owner->scopeKey())
+                ->and(json_decode($row->owner_reference, true, 512, JSON_THROW_ON_ERROR))->toBe($owner->toArray())
+                ->and($row->payload)->toBe($resource.'-'.($offset + 1));
+        }
+    }
+    expect(DB::table('nvl_ownership_legacy_owner_mappings')->count())->toBe(6)
+        ->and($writtenRows)->toBe(['fixture.records:1', 'fixture.records:1', 'fixture.records:2', 'fixture.records:3', 'remote.records:1', 'remote.records:2', 'remote.records:3'])
+        ->and(app(OwnershipInstallationState::class)->generations())->toHaveCount(2)
+        ->and(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active');
 });
 
 it('rejects duplicate assignments before package writes and persists the authorized attempt', function (): void {
