@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [7.0.4] - 2026-11-11
+
 ### Fixed
 
 - Stop reconstructing every owned canonical model four times on each active-generation check, which runs on every owned admission. Connection, fingerprint and marker checks now read one retained attribute-less model per resource. Table, connection, key and morph facts, store identities, markers and committed runs are still read on every check, so configuration and generation drift are refused as before.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- reuse canonical models in the active-generation check
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.3] - 2026-11-10
 
