@@ -23,7 +23,7 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 final readonly class OwnershipConfigurationFingerprint
 {
     /** Retain only declaration and storage services. */
-    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections, private InheritedOwnershipResolver $parents, private OwnershipActorResolver $actors) {}
+    public function __construct(private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipConnections $connections, private InheritedOwnershipResolver $parents, private OwnershipActorResolver $actors, private OwnershipCanonicalModels $models) {}
 
     /** Hash one exact declaration against fresh operation-local store facts.
      * @param  array<int, string>  $stores
@@ -72,7 +72,7 @@ final readonly class OwnershipConfigurationFingerprint
     private function resourceFingerprint(string $resource, array &$stores, array &$owners, array $principals, array $coordinator): string
     {
         $definition = $this->resources->get($resource);
-        $model = new $definition->model;
+        $model = $this->models->for($definition);
         $reference = $definition->ownership->owner;
         $owner = $reference === null ? null : ($owners[$reference] ??= $this->owner($reference, $stores));
 

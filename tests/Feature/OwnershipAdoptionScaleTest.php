@@ -8,6 +8,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
 use Nvl\Ownership\Services\OwnershipAdoptionCoordinator;
+use Nvl\Ownership\Services\OwnershipCanonicalModels;
 use Nvl\Ownership\Services\OwnershipConfigurationFingerprint;
 use Nvl\Ownership\Services\OwnershipInstallationState;
 use Nvl\Ownership\Services\OwnershipMigrationInput;
@@ -114,10 +115,16 @@ it('completes every empty adoption phase and bounds metadata reconstruction on a
         ->and($coordinator->verify($plan)->passed())->toBeTrue();
     $coordinator->activate($plan, $this->operation);
     LargeGraphOwner::$constructions = 0;
+    LargeGraphRecord::$constructions = 0;
 
     expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
         ->and(LargeGraphOwner::$constructions)->toBeLessThanOrEqual(16)
+        ->and(LargeGraphRecord::$constructions)->toBeLessThanOrEqual(154)
         ->and(DB::table(Tables::Runs)->where('id', $plan->id)->value('status'))->toBe('active');
+
+    LargeGraphRecord::$constructions = 0;
+    expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
+        ->and(LargeGraphRecord::$constructions)->toBe(0);
 });
 
 it('resolves chained owner replacements canonically before sharing their metadata', function (): void {
@@ -141,6 +148,27 @@ it('resolves chained owner replacements canonically before sharing their metadat
     } finally {
         Relation::morphMap($previous, false);
     }
+});
+
+it('rehashes a retained canonical resource model after its configured storage changes', function (): void {
+    $model = LargeGraphFixture::configuredRecord();
+    $resources = new OwnershipResourceRegistry;
+    $resource = new OwnershipResourceDefinition('configured.record', 'configured', $model, OwnershipDefinition::column(LargeGraphOwner::class, 'company_id'));
+    $resources->register($resource);
+    $this->app->instance(OwnershipResourceRegistry::class, $resources);
+    $fingerprints = app(OwnershipConfigurationFingerprint::class);
+    $before = $fingerprints->hash(['configured.record']);
+    $retained = app(OwnershipCanonicalModels::class)->for($resource);
+    LargeGraphRecord::$constructions = 0;
+    config(['ownership_test.configured_record_table' => 'ownership_scale_2']);
+
+    expect($fingerprints->hash(['configured.record']))->not->toBe($before)
+        ->and(LargeGraphRecord::$constructions)->toBe(0)
+        ->and(app(OwnershipCanonicalModels::class)->for($resource))->toBe($retained);
+
+    $replaced = new OwnershipResourceDefinition('configured.record', 'configured', LargeGraphRecord::class, $resource->ownership);
+    expect(app(OwnershipCanonicalModels::class)->for($replaced))->not->toBe($retained)
+        ->and(app(OwnershipCanonicalModels::class)->for($replaced)::class)->toBe(LargeGraphRecord::class);
 });
 
 it('rebuilds configuration and marker facts after an adapter callback', function (string $drift, string $exception): void {

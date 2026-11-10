@@ -22,7 +22,7 @@ use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 final readonly class OwnershipConnections
 {
     /** Retain connection services and immutable declarations. */
-    public function __construct(private DatabaseManager $database, private OwnershipResourceRegistry $resources, private OwnerRegistry $owners) {}
+    public function __construct(private DatabaseManager $database, private OwnershipResourceRegistry $resources, private OwnerRegistry $owners, private OwnershipCanonicalModels $models) {}
 
     /** Return the configured coordinator connection. */
     public function core(): Connection
@@ -33,9 +33,7 @@ final readonly class OwnershipConnections
     /** Return the exact canonical resource connection. */
     public function resource(string $resource): Connection
     {
-        $definition = $this->resources->get($resource);
-
-        return (new $definition->model)->getConnection();
+        return $this->models->for($this->resources->get($resource))->getConnection();
     }
 
     /** Return the effective named connection. */

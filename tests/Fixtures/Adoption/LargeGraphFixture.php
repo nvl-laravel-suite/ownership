@@ -71,6 +71,24 @@ final class LargeGraphFixture
         return array_map(static fn (int $group): string => 'scale-'.$group, range(1, self::AdapterCount));
     }
 
+    /**
+     * Declare a resource model whose table follows live configuration, as package models do.
+     *
+     * @return class-string<LargeGraphRecord>
+     */
+    public static function configuredRecord(): string
+    {
+        $model = __NAMESPACE__.'\\ScaleConfiguredRecord';
+        if (! class_exists($model, false)) {
+            eval('namespace '.__NAMESPACE__.'; class ScaleConfiguredRecord extends LargeGraphRecord { public function getTable(): string { return (string) config("ownership_test.configured_record_table", "ownership_scale_1"); } }');
+        }
+        if (! is_a($model, LargeGraphRecord::class, true)) {
+            throw new LogicException('Invalid configured fixture resource type.');
+        }
+
+        return $model;
+    }
+
     /** @return array{class-string<LargeGraphOwner>, class-string<LargeGraphOwner>} */
     public static function ownerReplacements(): array
     {

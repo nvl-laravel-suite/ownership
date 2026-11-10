@@ -48,6 +48,7 @@ use Nvl\Ownership\Services\OwnershipAdoptionRegistry;
 use Nvl\Ownership\Services\OwnershipAdoptionScope;
 use Nvl\Ownership\Services\OwnershipBatchOptions;
 use Nvl\Ownership\Services\OwnershipBoundary;
+use Nvl\Ownership\Services\OwnershipCanonicalModels;
 use Nvl\Ownership\Services\OwnershipConfiguration;
 use Nvl\Ownership\Services\OwnershipCreationScope;
 use Nvl\Ownership\Services\OwnershipMaintenanceQueueGuard;
@@ -94,6 +95,7 @@ final class OwnershipServiceProvider extends ServiceProvider
         $this->app->instance('nvl.ownership.runtime', true);
         $this->app->singletonIf(OwnershipResourceRegistry::class);
         $this->app->singletonIf(OwnershipAdoptionRegistry::class);
+        $this->app->singletonIf(OwnershipCanonicalModels::class);
         $this->app->scopedIf(OwnershipAdoptionScope::class);
         $this->app->scopedIf(OwnershipCreationScope::class);
         $this->app->scopedIf(OwnershipWriteLease::class);

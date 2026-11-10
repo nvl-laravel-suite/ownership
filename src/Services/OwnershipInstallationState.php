@@ -17,7 +17,7 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 final readonly class OwnershipInstallationState
 {
     /** Retain no persisted state or negative readiness cache. */
-    public function __construct(private OwnershipConnections $connections, private OwnershipResourceRegistry $resources, private OwnershipConfigurationFingerprint $fingerprints) {}
+    public function __construct(private OwnershipConnections $connections, private OwnershipResourceRegistry $resources, private OwnershipConfigurationFingerprint $fingerprints, private OwnershipCanonicalModels $models) {}
 
     /**
      * Capture the full active graph, rejecting partial stamps and immutable drift.
@@ -54,7 +54,7 @@ final readonly class OwnershipInstallationState
             }
             $row = $markers[$sourceId][$resource->key] ?? null;
             if ($row === null || ! is_string($row->generation) || $row->state !== 'active' || ! in_array($row->schema_version, [1, '1'], true)
-                || $row->physical_table !== (new $resource->model)->getTable()
+                || $row->physical_table !== $this->models->for($resource)->getTable()
                 || $row->source_store !== $store || $row->coordinator_store !== $stores[spl_object_id($coordinator)]
                 || $row->configuration_hash !== $fingerprints[$resource->key]) {
                 throw new OwnershipSchemaNotReady('The actual source has no matching active ownership generation.');
