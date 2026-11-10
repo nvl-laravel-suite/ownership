@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Reuse owner metadata, resource fingerprints and physical store identities within each fresh adoption validation pass. Retain validation before and after every adapter callback and preserve existing configuration hashes.
+- Batch metadata reconstruction for active-generation reads and deduplicate store identity reads during migration review. Cover an empty 154-resource, nine-adapter graph through preparation, backfill, verification and activation.
+
 ## [7.0.1] - 2026-11-09
 
 ### Fixed

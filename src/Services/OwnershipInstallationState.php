@@ -36,10 +36,7 @@ final readonly class OwnershipInstallationState
         foreach ($this->connections->sources() as $id => $source) {
             $stores[$id] = $this->connections->identity($source);
         }
-        $fingerprints = [];
-        foreach ($owned as $resource) {
-            $fingerprints[$resource->key] = $this->fingerprints->fingerprint($resource->key, $stores);
-        }
+        $fingerprints = $this->fingerprints->snapshot(array_keys($owned), $stores)['fingerprints'];
         $markers = [];
         $verified = [];
         foreach ($owned as $resource) {

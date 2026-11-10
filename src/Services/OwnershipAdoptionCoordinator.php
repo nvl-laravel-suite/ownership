@@ -71,12 +71,9 @@ final readonly class OwnershipAdoptionCoordinator
             $this->assertNoInterruptedRun($graph);
             $id = $review === null ? (string) Str::uuid() : $review->id;
             $this->assertSourceMarkers($id, $graph);
-            $configurationHash = $this->ownership->hash($graph['resources']);
-            $fingerprints = [];
-            foreach ($graph['resources'] as $resource) {
-                $fingerprints[$resource] = $this->ownership->fingerprint($resource);
-            }
-            $checkpoints = ['manifest' => $graph['manifest'], 'adapters' => [], 'fingerprints' => $fingerprints];
+            $configuration = $this->ownership->snapshot($graph['resources']);
+            $configurationHash = $configuration['hash'];
+            $checkpoints = ['manifest' => $graph['manifest'], 'adapters' => [], 'fingerprints' => $configuration['fingerprints']];
             foreach ($graph['packages'] as $package) {
                 $checkpoints['adapters'][$package] = ['prepared' => false, 'cursor' => null, 'done' => false, 'activated' => false];
             }
@@ -295,12 +292,17 @@ final readonly class OwnershipAdoptionCoordinator
             : $this->store->mappingHash($plan->id, $graph);
         if ($run['plan'] != $plan || $graph['packages'] !== $run['packages'] || ! hash_equals($graph['manifest'], $run['checkpoints']['manifest'])
             || array_diff(array_keys($run['checkpoints']['adapters']), $run['packages']) !== []
-            || array_diff($run['packages'], array_keys($run['checkpoints']['adapters'])) !== []
-            || ! hash_equals($this->ownership->hash($graph['resources']), $plan->configurationHash)
+            || array_diff($run['packages'], array_keys($run['checkpoints']['adapters'])) !== []) {
+            throw new OwnershipConfigurationInvalid('The adoption input, adapter graph, or ownership configuration changed.');
+        }
+        $configuration = $this->ownership->snapshot($graph['resources']);
+        if (! hash_equals($configuration['hash'], $plan->configurationHash)
             || ! hash_equals($mappingHash, $plan->mappingHash)
             || ! in_array($run['status'], ['prepared', 'backfilling', 'backfilled', 'activating', 'active', 'refreshing'], true)) {
             throw new OwnershipConfigurationInvalid('The adoption input, adapter graph, or ownership configuration changed.');
         }
+        $stores = $configuration['stores'];
+        $coordinator = $this->connections->core();
         foreach ($graph['resources'] as $resource) {
             $connection = $this->connections->resource($resource);
             $definition = $this->container->make(OwnershipResourceRegistry::class)->get($resource);
@@ -310,9 +312,9 @@ final readonly class OwnershipAdoptionCoordinator
                 continue;
             }
             if ($marker === null || $marker->physical_table !== $table
-                || $marker->generation !== $plan->id || $marker->configuration_hash !== $this->ownership->fingerprint($resource)
-                || $marker->source_store !== $this->connections->identity($connection)
-                || $marker->coordinator_store !== $this->connections->identity($this->connections->core())
+                || $marker->generation !== $plan->id || $marker->configuration_hash !== $configuration['fingerprints'][$resource]
+                || $marker->source_store !== ($stores[spl_object_id($connection)] ??= $this->connections->identity($connection))
+                || $marker->coordinator_store !== ($stores[spl_object_id($coordinator)] ??= $this->connections->identity($coordinator))
                 || ! in_array($marker->schema_version, [1, '1'], true)
                 || ! in_array($marker->state, $run['status'] === 'active' ? ['active'] : ['prepared', 'active'], true)) {
                 throw new OwnershipSchemaNotReady('The source generation changed during adoption.');
@@ -451,20 +453,24 @@ final readonly class OwnershipAdoptionCoordinator
     /** @param Graph $graph */
     private function stampSources(OwnershipAdoptionPlan $plan, array $graph): void
     {
+        $configuration = $this->ownership->snapshot($graph['resources']);
+        $stores = $configuration['stores'];
+        $coordinator = $this->connections->core();
         foreach ($graph['resources'] as $resource) {
             $connection = $this->connections->resource($resource);
             $definition = $this->container->make(OwnershipResourceRegistry::class)->get($resource);
             $table = (new $definition->model)->getTable();
             $existing = $connection->table(Tables::Markers)->where('resource', $resource)->orWhere('physical_table', $table)->first();
             if ($existing !== null) {
-                $this->assertSourceMarker($existing, $plan->id, $resource, $table);
+                $this->assertSourceMarker($existing, $plan->id, $resource, $table, $configuration['fingerprints'][$resource]);
 
                 continue;
             }
             $connection->table(Tables::Markers)->insert([
                 'resource' => $resource, 'physical_table' => $table, 'state' => 'prepared', 'schema_version' => 1,
-                'configuration_hash' => $this->ownership->fingerprint($resource), 'generation' => $plan->id,
-                'coordinator_store' => $this->connections->identity($this->connections->core()), 'source_store' => $this->connections->identity($connection),
+                'configuration_hash' => $configuration['fingerprints'][$resource], 'generation' => $plan->id,
+                'coordinator_store' => $stores[spl_object_id($coordinator)] ??= $this->connections->identity($coordinator),
+                'source_store' => $stores[spl_object_id($connection)] ??= $this->connections->identity($connection),
                 'created_at' => now(), 'updated_at' => now(),
             ]);
         }
@@ -488,10 +494,10 @@ final readonly class OwnershipAdoptionCoordinator
     }
 
     /** Require the original physical resource, generation and immutable configuration. */
-    private function assertSourceMarker(object $marker, string $generation, string $resource, string $table): void
+    private function assertSourceMarker(object $marker, string $generation, string $resource, string $table, ?string $fingerprint = null): void
     {
         $attributes = get_object_vars($marker);
-        if (($attributes['resource'] ?? null) !== $resource || ($attributes['physical_table'] ?? null) !== $table || ($attributes['generation'] ?? null) !== $generation || ($attributes['configuration_hash'] ?? null) !== $this->ownership->fingerprint($resource)) {
+        if (($attributes['resource'] ?? null) !== $resource || ($attributes['physical_table'] ?? null) !== $table || ($attributes['generation'] ?? null) !== $generation || ($attributes['configuration_hash'] ?? null) !== ($fingerprint ?? $this->ownership->fingerprint($resource))) {
             throw new OwnershipSchemaNotReady('Resume the original source adoption; marker replacement is forbidden.');
         }
     }

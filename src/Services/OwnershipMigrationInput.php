@@ -88,11 +88,13 @@ final readonly class OwnershipMigrationInput
     private function sources(array $graph): array
     {
         $sources = [];
+        $stores = [];
         foreach ($graph['resources'] as $resource) {
             $adapter = $graph['adapters'][$graph['owners'][$resource]];
             $model = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($resource) : new ($this->resources->get($resource)->model);
             $connection = $model->getConnection();
-            $sources[$resource] = ['model' => $model::class, 'table' => $model->getTable(), 'key' => $model->getKeyName(), 'store' => $this->connections->identity($connection), 'rows' => $connection->getSchemaBuilder()->hasTable($model->getTable()) ? $connection->table($model->getTable())->useWritePdo()->count() : 0];
+            $store = $stores[spl_object_id($connection)] ??= $this->connections->identity($connection);
+            $sources[$resource] = ['model' => $model::class, 'table' => $model->getTable(), 'key' => $model->getKeyName(), 'store' => $store, 'rows' => $connection->getSchemaBuilder()->hasTable($model->getTable()) ? $connection->table($model->getTable())->useWritePdo()->count() : 0];
         }
 
         return $sources;

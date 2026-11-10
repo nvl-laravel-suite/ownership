@@ -85,6 +85,7 @@ final readonly class OwnershipConnections
     {
         $core = $this->core();
         $sources = [spl_object_id($core) => $core];
+        $ownerConnections = [];
         foreach ($this->resources->all() as $definition) {
             if ($definition->ownership->strategy === 'unscoped') {
                 continue;
@@ -93,8 +94,11 @@ final readonly class OwnershipConnections
             $sources[spl_object_id($source)] = $source;
             $ownerClass = $definition->ownership->owner;
             if ($ownerClass !== null) {
-                $ownerClass = $this->owners->model($ownerClass);
-                $owner = (new $ownerClass)->getConnection();
+                if (! isset($ownerConnections[$ownerClass])) {
+                    $effective = $this->owners->model($ownerClass);
+                    $ownerConnections[$ownerClass] = (new $effective)->getConnection();
+                }
+                $owner = $ownerConnections[$ownerClass];
                 $sources[spl_object_id($owner)] = $owner;
             }
         }
