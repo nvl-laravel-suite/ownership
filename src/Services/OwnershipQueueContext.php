@@ -74,15 +74,13 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
         $envelope = OwnershipJobEnvelope::fromArray($envelope->toArray());
         $snapshot = $envelope->context();
         if ($snapshot->mode === OwnershipContextMode::Disabled) {
-            foreach ($this->container->make(OwnershipResourceRegistry::class)->all() as $resource) {
+            $resources = $this->container->make(OwnershipResourceRegistry::class)->all();
+            foreach ($resources as $resource) {
                 if ($resource->ownership->strategy !== 'unscoped') {
                     throw new OwnershipViolation('Disabled work cannot enter an owned deployment.');
                 }
             }
-            foreach ($this->container->make(OwnershipResourceRegistry::class)->all() as $resource) {
-                $model = new $resource->model;
-                $this->container->make(PersistedOwnershipStorage::class)->assertUnadopted($model->getConnection(), $resource->key, $model->getTable());
-            }
+            $this->container->make(PersistedOwnershipStorage::class)->assertUnadoptedResources($resources);
             $context = $this->container->make(ScopedOwnershipContext::class);
             $previous = $context->snapshot();
             $context->replace(new OwnershipSnapshot(OwnershipContextMode::Disabled));
