@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [7.0.3] - 2026-11-10
+
 ### Fixed
 
 - Batch disabled captured-job storage admission through Core instead of repeating catalog inspection for every registered resource. Preserve declared-owned refusal, fresh publication checks and exact context restoration. Require Core 7.0.4 or later for the batch primitive.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- batch fresh disabled publication storage checks
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.2] - 2026-11-10
 
