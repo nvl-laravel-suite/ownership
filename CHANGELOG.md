@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [7.0.4] - 2026-11-11
+
+### Fixed
+
+- Stop reconstructing every owned canonical model four times on each active-generation check, which runs on every owned admission. Connection, fingerprint and marker checks now read one retained attribute-less model per resource. Table, connection, key and morph facts, store identities, markers and committed runs are still read on every check, so configuration and generation drift are refused as before.
+
 ### Changed
 
 - Verify installation generation and owner availability once per admitted context and connection, and schema readiness once per resource, instead of before every owned operation. Each owned query, attribute set and namespaced key repeated about twelve catalog, marker and owner reads; a second identical query in the same request now runs one statement, and the first query on a further resource repeats only that resource's schema reads. The result lives in a scoped service, so it never outlives a request or job, and it is discarded by every coordinated adoption mutation, a new owner or central context and a reconnected connection. Drift caused by another process (a dropped constraint, a changed generation, an owner made unavailable) is refused from the next context, request or job rather than the next query. Record-level checks on save, refresh and delete are unchanged.
@@ -25,16 +31,11 @@
 - Read each owner store identity once per `OwnerIdentityResolver::reference()` or `resolve()` call instead of up to four times. Nothing is retained between calls.
 - Report owned models whose custom Eloquent builder does not use `ScopesOwnedBuilderWrites` as an `ownership.builders` doctor warning; it fails `nvl:ownership:doctor --strict`.
 
-## [7.0.4] - 2026-11-11
-
-### Fixed
-
-- Stop reconstructing every owned canonical model four times on each active-generation check, which runs on every owned admission. Connection, fingerprint and marker checks now read one retained attribute-less model per resource. Table, connection, key and morph facts, store identities, markers and committed runs are still read on every check, so configuration and generation drift are refused as before.
-
 <!-- NVL GENERATED CHANGES START -->
 ### Changed
 
 - reuse canonical models in the active-generation check
+- verify once per context and close builder, queue and adoption gaps
 <!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.3] - 2026-11-10
