@@ -19,6 +19,7 @@ use Nvl\Ownership\Tests\Fixtures\Adoption\RecordsAdapter;
 use Nvl\Ownership\Tests\Fixtures\Company;
 use Nvl\Ownership\ValueObjects\OwnershipMapping;
 use Nvl\Ownership\ValueObjects\OwnershipOperation;
+use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
@@ -28,6 +29,29 @@ use Symfony\Component\Process\Process;
 it('leaves unowned storage usable with only the optional metadata schema installed', function (): void {
     (require __DIR__.'/../../database/migrations/ownership/2026_10_18_000001_nvl_ownership_create_adoption_tables.php')->up();
     expect(fn () => (new PersistedOwnershipStorage)->assertUnadopted(DB::connection(), 'unowned.records', 'unowned_records'))->not->toThrow(Throwable::class);
+});
+
+it('finds persisted markers through a PostgreSQL search path whose first schema does not exist', function (): void {
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('The effective search path is a PostgreSQL concept.');
+    }
+    (require __DIR__.'/../../database/migrations/ownership/2026_10_18_000001_nvl_ownership_create_adoption_tables.php')->up();
+    DB::table('nvl_ownership_resource_markers')->insert([
+        'resource' => 'fixture.records', 'physical_table' => 'ownership_test_records', 'state' => 'prepared', 'schema_version' => 1,
+        'configuration_hash' => str_repeat('a', 64), 'generation' => '550e8400-e29b-41d4-a716-446655440000',
+        'coordinator_store' => '550e8400-e29b-41d4-a716-446655440001', 'source_store' => '550e8400-e29b-41d4-a716-446655440001',
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    config(['database.connections.user_search_path' => [...DB::connection()->getConfig(), 'search_path' => '"$user",public', 'name' => 'user_search_path']]);
+    $connection = DB::connection('user_search_path');
+    expect($connection->scalar('select current_schema()'))->toBe('public')
+        ->and($connection->getSchemaBuilder()->getCurrentSchemaName())->not->toBe('public');
+
+    $storage = new PersistedOwnershipStorage;
+    expect($storage->probe($connection)['markers'])->toHaveCount(1)
+        ->and(fn () => $storage->assertUnadopted($connection, 'fixture.records', 'unrelated_table'))->toThrow(OwnershipSchemaNotReady::class)
+        ->and(fn () => $storage->assertUnadoptedTables($connection, ['ownership_test_records']))->toThrow(OwnershipSchemaNotReady::class)
+        ->and(fn () => $storage->assertUnadopted($connection, 'other.records', 'other_records'))->not->toThrow(Throwable::class);
 });
 
 it('propagates actual source database failures instead of treating them as unadopted', function (): void {

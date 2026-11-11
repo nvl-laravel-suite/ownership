@@ -13,6 +13,7 @@ use Nvl\Ownership\Queue\OwnershipDatabaseBatchRepository;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Ownership\Services\DisabledOwnershipQueueContext;
 use Nvl\Support\Ownership\Services\OwnershipQueueCarrier;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
@@ -29,9 +30,12 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
     /** Retain only the current application, never a captured request adapter. */
     public function __construct(private Container $container) {}
 
-    /** Capture explicit global execution without deriving any owner or central authority. */
+    /** Capture explicit global execution without authority; a disabled runtime captures exactly like an absent one. */
     public function captureUnowned(): OwnershipJobEnvelope
     {
+        if ($this->container->make('config')->get('nvl-ownership.enabled') !== true) {
+            return $this->container->make(DisabledOwnershipQueueContext::class)->captureUnowned();
+        }
         $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
         $this->container->make(OwnershipConfiguration::class)->assertReady();
         if ($this->container->make(OwnershipContext::class)->snapshot()->publicSite !== null) {
@@ -41,9 +45,12 @@ final readonly class OwnershipQueueContext implements \Nvl\Support\Ownership\Con
         return OwnershipJobEnvelope::unowned($this->container->make(OwnershipInstallationState::class)->generations());
     }
 
-    /** Validate every job before persisting native batch callbacks. */
+    /** Validate every job before persisting native batch callbacks; a disabled runtime keeps native batches. */
     public function captureBatch(PendingBatch $batch): PendingBatch
     {
+        if ($this->container->make('config')->get('nvl-ownership.enabled') !== true) {
+            return $this->container->make(DisabledOwnershipQueueContext::class)->captureBatch($batch);
+        }
         if (! $this->container->make(BatchRepository::class) instanceof OwnershipDatabaseBatchRepository) {
             throw new OwnershipViolation('Owned batches require a guarded native database repository.');
         }

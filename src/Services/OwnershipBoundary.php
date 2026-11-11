@@ -82,7 +82,9 @@ final readonly class OwnershipBoundary implements BoundaryContract
         $canonical = new $definition->model;
         foreach ($this->protectedFields($definition) as $field) {
             if (! $this->samePersistedField($field, $record->getRawOriginal($field), $fresh->getRawOriginal($field), $canonical->hasCast($field, ['bool', 'boolean']))) {
-                throw new OwnershipViolation('The model no longer represents the persisted primary ownership facts.');
+                throw new OwnershipViolation(array_key_exists($field, $record->getRawOriginal())
+                    ? 'The model no longer represents the persisted primary ownership facts.'
+                    : "The model was loaded without its protected ownership field [{$field}]. Select every ownership field, or reload the model, before saving, refreshing or deleting it.");
             }
         }
         $reference = $this->container->make(OwnershipCanonicalResolver::class)->fromPersisted($fresh, $definition, $record->getConnection()->transactionLevel() > 0);
@@ -150,7 +152,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
         return (is_int($original) || is_string($original)) && (is_int($persisted) || is_string($persisted)) && (string) $original === (string) $persisted;
     }
 
-    /** Revalidate status and generation before exposing any owned source. */
+    /** Verify generation and owner once per snapshot and connection, and schema once per resource, within one request or job. */
     private function admit(OwnershipResourceDefinition $resource): ?OwnershipSnapshot
     {
         $this->container->make(OwnershipAdoptionScope::class)->assertQueueAllowed();
@@ -170,14 +172,31 @@ final readonly class OwnershipBoundary implements BoundaryContract
             || ($snapshot->mode === OwnershipContextMode::Central && ! $resource->allowsCentral)) {
             throw new OwnershipViolation;
         }
-        $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
-        $this->container->make(OwnershipSchema::class)->assertReady($resource->key);
-        if ($snapshot->owner !== null) {
-            $canonical = $this->container->make(OwnerIdentityResolver::class)->resolve($snapshot->owner);
-            $this->container->make(OwnerAvailability::class)->assertAvailable($canonical);
-            if ($resource->ownership->owner !== null && $canonical::class !== $this->container->make(OwnerRegistry::class)->model($resource->ownership->owner)) {
-                throw new OwnershipViolation;
+        $verified = $this->container->make(OwnershipVerifiedAdmissions::class);
+        $connection = $this->container->make(OwnershipCanonicalModels::class)->for($resource)->getConnection();
+        $adopting = $this->container->make(OwnershipAdoptionScope::class)->active();
+        if (! $adopting && $verified->has($snapshot, $resource->key, $connection)) {
+            return $snapshot;
+        }
+        $owner = $adopting ? null : $verified->owner($snapshot, $connection);
+        if ($owner === null) {
+            $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
+            $owner = '';
+            if ($snapshot->owner !== null) {
+                $canonical = $this->container->make(OwnerIdentityResolver::class)->resolve($snapshot->owner);
+                $this->container->make(OwnerAvailability::class)->assertAvailable($canonical);
+                $owner = $canonical::class;
             }
+            if (! $adopting) {
+                $verified->rememberOwner($snapshot, $connection, $owner);
+            }
+        }
+        $this->container->make(OwnershipSchema::class)->assertReady($resource->key);
+        if ($owner !== '' && $resource->ownership->owner !== null && $owner !== $this->container->make(OwnerRegistry::class)->model($resource->ownership->owner)) {
+            throw new OwnershipViolation;
+        }
+        if (! $adopting) {
+            $verified->remember($snapshot, $resource->key, $connection);
         }
 
         return $snapshot;

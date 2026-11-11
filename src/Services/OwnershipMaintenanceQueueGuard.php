@@ -31,7 +31,7 @@ abstract class OwnershipMaintenanceQueueGuard extends Queue
     }
 
     /**
-     * Reject scheduling before command serialization or after-commit deferral.
+     * Reject scheduling before command serialization or after-commit deferral; stamp host-declared uncaptured classes as unowned.
      *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
@@ -46,13 +46,16 @@ abstract class OwnershipMaintenanceQueueGuard extends Queue
         $owned = array_filter($app->make(OwnershipResourceRegistry::class)->all(), static fn ($resource): bool => $resource->ownership->strategy !== 'unscoped');
         $data = $payload['data'] ?? null;
         $command = is_array($data) ? ($data['command'] ?? null) : null;
-        if ($owned === [] && (! is_object($command) || ! $app->make(OwnershipQueueCarrier::class)->captured($command))) {
+        $carrier = $app->make(OwnershipQueueCarrier::class);
+        if ($owned === [] && (! is_object($command) || ! $carrier->captured($command))) {
             return [];
         }
         if (! is_object($command)) {
             throw new OwnershipViolation('Owned queue publication requires an explicitly captured native command.');
         }
-        $envelope = $app->make(OwnershipQueueCarrier::class)->envelope($command);
+        $envelope = ! $carrier->captured($command) && $app->make(OwnershipQueueCommand::class)->declaredUnowned($command::class)
+            ? $app->make(OwnershipQueueContext::class)->captureUnowned()
+            : $carrier->envelope($command);
         $app->make(OwnershipQueueContext::class)->run($envelope, function () use ($app, $command, $data, $envelope): void {
             $app->make(OwnershipQueueCommand::class)->validateRestored($command);
             if (! OwnershipCallQueuedHandler::compatible($app->make(CallQueuedHandler::class))) {

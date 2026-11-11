@@ -28,7 +28,7 @@ final class OwnershipDoctorCommand extends Command
             $this->line(json_encode(['healthy' => $healthy, 'checks' => $checks], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
         } else {
             foreach ($checks as $check) {
-                $this->line(sprintf('[%s] %s: %s', $check['passed'] ? 'PASS' : 'ERROR', $check['key'], $check['message']));
+                $this->line(sprintf('[%s] %s: %s', $check['passed'] ? 'PASS' : strtoupper($check['severity']), $check['key'], $check['message']));
             }
         }
 

@@ -95,7 +95,7 @@ final readonly class OwnershipAdoptionStore
     }
 
     /**
-     * Stream reviewed rows into indexed storage inside the caller's preparation transaction.
+     * Validate and stream reviewed rows into indexed storage inside the caller's preparation transaction, then hash the sealed bytes.
      *
      * @param  iterable<OwnershipMapping>  $assignments
      * @param  Graph  $graph
@@ -111,7 +111,7 @@ final readonly class OwnershipAdoptionStore
             $query->insert(['run_id' => $runId, 'resource' => $assignment->resource, 'record_id' => $assignment->recordId, 'owner_reference' => json_encode($assignment->owner?->toArray(), JSON_THROW_ON_ERROR), 'legacy_tenant_id' => $assignment->legacyTenantId, 'metadata' => $metadata]);
         }
 
-        return $this->mappingHash($runId, $graph);
+        return $this->immutableMappingHash($runId);
     }
 
     /**

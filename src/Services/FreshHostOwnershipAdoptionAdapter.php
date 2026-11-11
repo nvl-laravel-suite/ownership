@@ -66,10 +66,10 @@ abstract class FreshHostOwnershipAdoptionAdapter implements OwnershipAdoptionAda
         return new OwnershipVerification([]);
     }
 
-    /** Install native immutable ownership constraints before the coordinator publishes activation. */
+    /** Install native immutable ownership constraints before activation, or reapply them to an active graph's records. */
     final public function activate(OwnershipAdoptionPlan $plan): void
     {
-        $this->assertFresh($plan, 'activate');
+        $this->scope->refreshing() ? $this->assertDeclared($plan, 'refresh') : $this->assertFresh($plan, 'activate');
         foreach ($this->resources() as $resource) {
             $this->schema->constrain($resource);
         }
@@ -78,17 +78,23 @@ abstract class FreshHostOwnershipAdoptionAdapter implements OwnershipAdoptionAda
     /** Refuse arbitrary calls and any records that require a reviewed migration workflow. */
     private function assertFresh(OwnershipAdoptionPlan $plan, string $phase): void
     {
-        $this->scope->assertAdapterInvocation($plan->id, static::class, $phase);
-        $resources = $this->resources();
-        if ($resources === [] || count(array_unique($resources)) !== count($resources)) {
-            throw new OwnershipConfigurationInvalid('Fresh host adoption requires distinct declared resources.');
-        }
-        foreach ($resources as $resource) {
+        $this->assertDeclared($plan, $phase);
+        foreach ($this->resources() as $resource) {
             $definition = $this->registry->get($resource);
             $model = new $definition->model;
             if ($model->getConnection()->table($model->getTable())->useWritePdo()->exists()) {
                 throw new OwnershipConfigurationInvalid('Fresh host adoption requires empty resources; existing records need reviewed mappings.');
             }
+        }
+    }
+
+    /** Require the exact coordinator phase and a distinct nonempty resource declaration. */
+    private function assertDeclared(OwnershipAdoptionPlan $plan, string $phase): void
+    {
+        $this->scope->assertAdapterInvocation($plan->id, static::class, $phase);
+        $resources = $this->resources();
+        if ($resources === [] || count(array_unique($resources)) !== count($resources)) {
+            throw new OwnershipConfigurationInvalid('Fresh host adoption requires distinct declared resources.');
         }
     }
 }

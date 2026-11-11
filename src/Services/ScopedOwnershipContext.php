@@ -23,7 +23,7 @@ final class ScopedOwnershipContext implements OwnershipContext
     private bool $invalid = false;
 
     /** Initialize with no inferred owner or principal. */
-    public function __construct(Repository $configuration)
+    public function __construct(Repository $configuration, private readonly OwnershipVerifiedAdmissions $verified)
     {
         $this->current = new OwnershipSnapshot($configuration->get('nvl-ownership.enabled') === true
             ? OwnershipContextMode::Unresolved : OwnershipContextMode::Disabled);
@@ -62,6 +62,7 @@ final class ScopedOwnershipContext implements OwnershipContext
     public function invalidate(): void
     {
         $this->invalid = true;
+        $this->verified->forget();
         $this->current = new OwnershipSnapshot(OwnershipContextMode::Unresolved);
     }
 

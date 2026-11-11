@@ -21,6 +21,7 @@ use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\OwnershipStorageProbes;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use PDO;
 
@@ -217,7 +218,7 @@ final readonly class OwnershipAdoptionCoordinator
             }
             $this->refreshMarkers($plan, $graph, 'prepared');
             foreach ($graph['adapters'] as $adapter) {
-                $this->invoke($plan, $adapter, 'activate', fn () => $adapter->activate($plan), constraintRefresh: true);
+                $this->invoke($plan, $adapter, 'refresh', fn () => $adapter->activate($plan), constraintRefresh: true);
             }
             if ($this->refreshSnapshot($plan, $graph) !== $checkpoints['constraint_refresh']) {
                 throw new OwnershipViolation('Constraint refresh changed application resource rows.');
@@ -397,6 +398,10 @@ final readonly class OwnershipAdoptionCoordinator
     /**
      * Confine a registered adapter invocation to its immutable run and live connection session.
      *
+     * The run is fully revalidated after every callback. The validation before a callback is the
+     * phase entry (or mapping ingestion) for the first one and the previous callback's for the rest;
+     * only this coordinator's own checkpoint and marker writes happen in between, under the source locks.
+     *
      * @template T
      *
      * @param  Closure(): T  $callback
@@ -411,7 +416,6 @@ final readonly class OwnershipAdoptionCoordinator
         if ($requiresMaintenance && (! $enabled || ! $maintenance)) {
             throw new OwnershipViolation('Adoption requires enabled ownership and application maintenance mode.');
         }
-        $this->validated($plan, $constraintRefresh);
         $this->assertCallbackBoundary($connection, $pdo, $enabled, $maintenance);
         $sessions = [];
         foreach ($this->connections->participating() as $id => $source) {
@@ -554,10 +558,19 @@ final readonly class OwnershipAdoptionCoordinator
         $this->container->make(OwnershipAdoptionAccess::class)->authorize($operation);
         $this->assertTransactionEntry();
 
-        return $this->locked(function () use ($operation, $callback): mixed {
-            $this->audit->record($operation);
+        $verified = $this->container->make(OwnershipVerifiedAdmissions::class);
+        $probes = $this->container->make(OwnershipStorageProbes::class);
+        $verified->forget();
+        $probes->forget();
+        try {
+            return $this->locked(function () use ($operation, $callback): mixed {
+                $this->audit->record($operation);
 
-            return $callback();
-        });
+                return $callback();
+            });
+        } finally {
+            $verified->forget();
+            $probes->forget();
+        }
     }
 }

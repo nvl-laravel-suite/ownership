@@ -323,7 +323,11 @@ final readonly class OwnershipSchema
         }
     }
 
-    /** @param list<string> $columns */
+    /**
+     * Add the partition uniqueness unless an equal one exists; a table prefix is part of a new name, which PostgreSQL keeps schema-wide.
+     *
+     * @param  list<string>  $columns
+     */
     private function unique(Connection $connection, string $table, array $columns): void
     {
         $schema = $connection->getSchemaBuilder();
@@ -332,7 +336,7 @@ final readonly class OwnershipSchema
                 return;
             }
         }
-        $name = 'nvl_own_u_'.substr(hash('sha256', $table.json_encode($columns, JSON_THROW_ON_ERROR)), 0, 32);
+        $name = 'nvl_own_u_'.substr(hash('sha256', $connection->getTablePrefix().$table.json_encode($columns, JSON_THROW_ON_ERROR)), 0, 32);
         $schema->table($table, static fn (Blueprint $table) => $table->unique($columns, $name));
     }
 
@@ -348,14 +352,33 @@ final readonly class OwnershipSchema
         $identity = spl_object_id($connection).':'.$table;
         $foreignKeys[$identity] ??= $connection->getSchemaBuilder()->getForeignKeys($table);
         foreach ($foreignKeys[$identity] as $foreign) {
-            if ($foreign['columns'] === $columns && $foreign['foreign_table'] === $connection->getTablePrefix().$parent && $foreign['foreign_columns'] === $parentColumns) {
+            if ($this->references($connection, $foreign, $columns, $parent, $parentColumns)) {
                 return;
             }
         }
         throw new OwnershipSchemaNotReady('The host schema has no canonical native owner or parent foreign key.');
     }
 
-    /** @param list<string> $columns
+    /**
+     * Match a native foreign key to its canonical parent, whose table may carry a schema and receives the connection prefix.
+     *
+     * @param  ForeignKey  $foreign
+     * @param  list<string>  $columns
+     * @param  list<string>  $parentColumns
+     */
+    private function references(Connection $connection, array $foreign, array $columns, string $parent, array $parentColumns): bool
+    {
+        [$schema, $table] = $connection->getSchemaBuilder()->parseSchemaAndTable($parent);
+
+        return $foreign['columns'] === $columns && $foreign['foreign_columns'] === $parentColumns
+            && $foreign['foreign_table'] === $connection->getTablePrefix().$table
+            && ($schema === null || $foreign['foreign_schema'] === $schema);
+    }
+
+    /**
+     * Add the composite partition key unless an equal one exists; a table prefix is part of a new name, which MySQL keeps database-wide.
+     *
+     * @param  list<string>  $columns
      * @param  list<string>  $parentColumns
      */
     private function partitionForeign(Connection $connection, string $table, array $columns, string $parent, array $parentColumns): void
@@ -365,11 +388,11 @@ final readonly class OwnershipSchema
         }
         $schema = $connection->getSchemaBuilder();
         foreach ($schema->getForeignKeys($table) as $foreign) {
-            if ($foreign['columns'] === $columns && $foreign['foreign_table'] === $parent && $foreign['foreign_columns'] === $parentColumns) {
+            if ($this->references($connection, $foreign, $columns, $parent, $parentColumns)) {
                 return;
             }
         }
-        $name = 'nvl_own_f_'.substr(hash('sha256', $table.json_encode($columns, JSON_THROW_ON_ERROR)), 0, 32);
+        $name = 'nvl_own_f_'.substr(hash('sha256', $connection->getTablePrefix().$table.json_encode($columns, JSON_THROW_ON_ERROR)), 0, 32);
         $schema->table($table, static fn (Blueprint $table) => $table->foreign($columns, $name)->references($parentColumns)->on($parent)->cascadeOnDelete());
     }
 }

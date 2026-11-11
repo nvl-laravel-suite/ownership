@@ -9,6 +9,7 @@ use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
 use Nvl\Ownership\Contracts\OwnershipAdoptionSource;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 
 /**
  * Resolves the immutable selected graph and canonical-parent closure.
@@ -20,9 +21,15 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 final readonly class OwnershipAdoptionGraph
 {
     /** Resolve scoped adapters only while performing one adoption phase. */
-    public function __construct(private Container $container, private OwnershipAdoptionRegistry $adoptions, private OwnershipResourceRegistry $resources) {}
+    public function __construct(private Container $container, private OwnershipAdoptionRegistry $adoptions, private OwnershipResourceRegistry $resources, private OwnershipConnections $connections) {}
 
-    /** @param list<string> $packages
+    /**
+     * Select the named packages and the packages of their canonical parents.
+     *
+     * A parent package that was not named stays outside the run once all of its resources are active,
+     * so a later deployment can adopt new children without replacing the parents' generation.
+     *
+     * @param  list<string>  $packages
      * @return Graph
      */
     public function resolve(array $packages): array
@@ -50,7 +57,7 @@ final readonly class OwnershipAdoptionGraph
         }
         $ordered = [];
         $visiting = [];
-        $visit = function (string $package) use (&$visit, &$ordered, &$visiting, $adapters, $owners): void {
+        $visit = function (string $package) use (&$visit, &$ordered, &$visiting, $adapters, $owners, $packages): void {
             if (isset($ordered[$package])) {
                 return;
             }
@@ -61,7 +68,7 @@ final readonly class OwnershipAdoptionGraph
             foreach ($adapters[$package]->resources() as $key) {
                 foreach ($this->resources->get($key)->parents() as $parent) {
                     $parentPackage = $owners[$parent] ?? throw new OwnershipConfigurationInvalid('A parent has no adoption adapter.');
-                    if ($parentPackage !== $package) {
+                    if ($parentPackage !== $package && (in_array($parentPackage, $packages, true) || ! isset($adapters[$parentPackage]) || ! $this->active($adapters[$parentPackage]))) {
                         $visit($parentPackage);
                     }
                 }
@@ -97,5 +104,17 @@ final readonly class OwnershipAdoptionGraph
         sort($packages);
 
         return ['packages' => $packages, 'resources' => $keys, 'adapters' => $ordered, 'owners' => array_intersect_key($owners, array_flip($keys)), 'manifest' => hash('sha256', json_encode($manifest, JSON_THROW_ON_ERROR))];
+    }
+
+    /** Read the live source markers; the children's constraints and every later admission still verify the parents' committed generation. */
+    private function active(OwnershipAdoptionAdapter $adapter): bool
+    {
+        foreach ($adapter->resources() as $key) {
+            if ($this->connections->resource($key)->table(Tables::Markers)->useWritePdo()->where('resource', $key)->value('state') !== 'active') {
+                return false;
+            }
+        }
+
+        return $adapter->resources() !== [];
     }
 }

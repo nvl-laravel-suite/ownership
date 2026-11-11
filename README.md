@@ -20,7 +20,9 @@ actor. Bind host admission, select migrations, and complete reviewed adoption.
 Ownership commands are registered only when `nvl-ownership.enabled` is true.
 After configuring admission and entering the reviewed maintenance/adoption
 workflow, enable the runtime and use
-`php artisan nvl:ownership:doctor --strict --format=json` to inspect readiness.
+`php artisan nvl:ownership:doctor --strict --format=json` to inspect readiness. The same
+`ownership.readiness` and `ownership.builders` checks are contributed to Core's
+combined `nvl:doctor` whenever this package is installed, enabled or not.
 
 ## Purpose
 
@@ -37,12 +39,19 @@ packages you need. The retired Tenancy bridge supplies no supported runtime or
 authority. Ordinary unowned applications need no enforcement runtime.
 Complete deployment-specific cutover rehearsal before enabling isolation.
 
-Readiness and owner availability remain live checks on every admitted operation.
-Schema metadata is shared only within one resource-graph inspection; it is not
-retained across queries, jobs or requests. A changed generation, removed native
-constraint or unavailable owner must be rejected immediately. Disabled/unowned
-storage also probes the actual protocol catalog so another process's adoption
-cannot silently expose a newly partitioned table without its runtime.
+Installation generation and owner availability are verified live the first time
+an owner or central context touches owned storage, schema readiness the first
+time it touches each resource, and all of them again in every new context,
+request and job. Within one context the result is reused, so
+later queries on that resource run alone instead of repeating about a dozen
+catalog and marker reads. Nothing is retained across requests or jobs, a
+reconnected database connection is verified again, and a coordinated adoption
+mutation discards every remembered result in its process. A generation changed,
+native constraint removed or owner made unavailable by another process is
+therefore rejected from the next context, request or job rather than the next
+query. Disabled/unowned storage probes the actual protocol catalog once per
+connection in each request or job, so another process's adoption cannot expose a
+newly partitioned table without its runtime beyond the request in progress.
 
 ## Quick reference
 
@@ -236,7 +245,9 @@ $coordinator->activate($plan, $operation);
 The helper installs native partition columns and immutable constraints through
 Ownership's schema implementation. The coordinator still checks authorization,
 maintenance, graph closure, mapping conservation and activation; the helper cannot
-be called independently to manufacture readiness. It refuses nonempty resources.
+be called independently to manufacture readiness. It refuses nonempty resources
+in every adoption phase; only the coordinator's constraint refresh of the already
+active graph may reapply constraints over existing records.
 MySQL and MariaDB partition columns use `ascii` / `ascii_bin` while retaining
 their 191-character capacity. This preserves full composite indexes without
 prefix uniqueness. Maintenance preparation can convert existing canonical
@@ -274,6 +285,34 @@ reviewed migration; preparation never removes their generation semantics.
 Existing records require a dedicated reviewed adoption adapter and mappings.
 After activation, normal host writes use `OwnershipWriter` inside an admitted
 `OwnershipRunner` operation. Do not call schema internals or write readiness markers.
+
+### Adding a resource after adoption
+
+Registering one more owned resource closes every owned admission until that
+resource has its own active generation; this is deliberate, so deploy the
+declaration and adopt it in the same maintenance window. Give the new resource a
+new adoption package with its own adapter and run the ordinary phases for that
+package alone:
+
+```php
+$adoptions->register('host-invoice-lines', InvoiceLinesAdapter::class); // resources(): ['invoices.lines']
+$plan = $coordinator->prepare(['host-invoice-lines'], $mappings, $operation);
+```
+
+A package named in `prepare()` still brings the packages of its parents into the
+run when they have never been adopted. A parent package that was not named and
+whose resources are all active stays outside the run: its generation, mappings and
+markers are untouched, and the new child's constraints and every later admission
+verify it as before. The existing resources stay fenced only until the new
+package is activated.
+
+Never add a resource to the `resources()` list of an adapter that already has an
+active run. That list is sealed into the run's manifest: `prepare()` then refuses
+with "marker replacement is forbidden" because the adapter's other resources
+belong to the committed generation, and the original plan can no longer be
+resumed or constraint-refreshed until the list is restored. Replacing a committed
+generation would require every existing record of the adopted resources to be
+remapped and reverified, which this package does not offer.
 
 For automatic vendor migrations, set `nvl-ownership.migrations.enabled=true` and
 do not publish `nvl-ownership-migrations`. For host-owned migrations, set
@@ -388,7 +427,36 @@ actor, owner, generation and schema before restoring models or executing callbac
 Retry captured failures with `php artisan nvl:queue:retry <failed-job-id>`; native
 `queue:retry` restores commands before admission and is blocked for captured NVL
 work, including ordinary business failures. Raw retry preserves the producer
-envelope, and the worker re-admits it. Never infer an owner from ambient worker state. Unresolved owned work is rejected.
+envelope, and the worker re-admits it. While `nvl-ownership.enabled` is false,
+native `queue:retry` stays available for work carrying only a disabled envelope;
+quarantined records still need `nvl:queue:retry`, which `nvl/core` registers whether or not this package is installed or enabled. Never infer an owner from ambient worker state. Unresolved owned work is rejected.
+
+Once the runtime is enabled with any owned resource, a queued command that carries
+no capture is refused at dispatch. Framework and third-party commands that cannot
+implement `OwnershipQueuedJob` (`Illuminate\Broadcasting\BroadcastEvent`,
+`Illuminate\Queue\CallQueuedClosure`, Scout jobs, and the
+`SendQueuedNotifications`, `SendQueuedMailable` and `CallQueuedListener` wrappers
+when their notification, mailable or event carries no capture) must be declared by
+their exact command class:
+
+```php
+// config/nvl-ownership.php
+'queue' => ['unowned_jobs' => [
+    Illuminate\Broadcasting\BroadcastEvent::class,
+    Illuminate\Queue\CallQueuedClosure::class,
+]],
+```
+
+The list defaults to empty and matches the queued command's own class exactly, with
+no subclasses or patterns; every other uncaptured class stays refused. A declared
+command is stamped with the explicit unowned envelope at dispatch, whichever owner
+is admitted at that moment, and its worker runs it with no actor, owner or central
+authority: owned resources stay closed to it, and any model it serializes must be
+a registered resource that the unowned boundary admits. A command that carries its
+own capture keeps it; the list never downgrades captured work. Declared commands
+cannot join an ownership batch, and a chain may only continue with captured or
+declared commands. A worker must declare the same class, otherwise the job is
+quarantined.
 
 `runSystem()` and `central()` require explicit operation allowlists, host access
 policies and durable audits. They are not broad ownership bypasses. Media central
@@ -426,7 +494,7 @@ Use separately authorized system workflows for durable background work.
 
 Owned root instance counters, quiet counters, saves, deletes and restorations
 retain the canonical source guard. Configured subclasses cannot replace those
-persistence seams. Models and query builders remain native Eloquent APIs; use domain services for their complete lifecycle and authorization guarantees. Ownership is not a replacement for host authorization or native SQL permissions.
+persistence seams. Models and query builders remain native Eloquent APIs; use domain services for their complete lifecycle and authorization guarantees. Builder-level `forceDelete()`, `updateOrInsert()` and `updateFrom()`, which Laravel runs without global scopes, are kept inside the admitted owner; a custom Eloquent builder on an owned model must use `Nvl\Support\Ownership\Traits\ScopesOwnedBuilderWrites` to receive that guarantee. `nvl:ownership:doctor` warns about owned models whose builder does not. `truncate()` and a builder that explicitly removes the ownership scope stay native and are not partitioned. Ownership is not a replacement for host authorization or native SQL permissions.
 
 
 ## Reviewed migration commands

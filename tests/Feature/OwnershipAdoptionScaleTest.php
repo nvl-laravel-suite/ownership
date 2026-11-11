@@ -181,7 +181,7 @@ it('rebuilds configuration and marker facts after an adapter callback', function
         } elseif ($drift === 'morph') {
             Relation::morphMap(['changed-scale-owner' => LargeGraphOwner::class] + Relation::morphMap(), false);
         } else {
-            DB::table(Tables::Markers)->where('resource', 'scale-1.record_1')->update(['generation' => 'changed-generation']);
+            DB::table(Tables::Markers)->where('resource', 'scale-1.record_1')->update(['generation' => '550e8400-e29b-41d4-a716-446655440099']);
         }
     }]);
     try {

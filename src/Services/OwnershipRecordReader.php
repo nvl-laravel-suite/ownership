@@ -33,6 +33,9 @@ final readonly class OwnershipRecordReader
     {
         $this->assertModel($record, $resource);
         $key = $record->getRawOriginal($record->getKeyName());
+        if ($record->exists && ! array_key_exists($record->getKeyName(), $record->getRawOriginal())) {
+            throw new OwnershipViolation("The model was loaded without its primary key [{$record->getKeyName()}]. Select the key and every ownership field, or reload the model, before saving, refreshing or deleting it.");
+        }
         if (! $record->exists || (! is_int($key) && ! is_string($key)) || $record->isDirty($record->getKeyName())) {
             throw new OwnershipViolation;
         }

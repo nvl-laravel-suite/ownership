@@ -91,6 +91,29 @@ it('reads each store once per fingerprint operation without retaining its identi
     }
 })->with(['single resource' => false, 'resource graph' => true]);
 
+it('reads the owner store once per identity operation without retaining it across calls', function (): void {
+    $resolver = app(OwnerIdentityResolver::class);
+    $company = Company::query()->findOrFail(7);
+    $connection = DB::connection();
+    $connection->enableQueryLog();
+    try {
+        $before = $resolver->reference($company);
+        expect($connection->getQueryLog())->toHaveCount(2);
+        $connection->flushQueryLog();
+        expect($resolver->resolve($before)->is($company))->toBeTrue()
+            ->and($connection->getQueryLog())->toHaveCount(3);
+
+        $connection->table(OwnershipStorageTables::Stores)->where('id', 1)->update(['store_id' => '550e8400-e29b-41d4-a716-446655440000']);
+        $connection->flushQueryLog();
+        expect($resolver->reference($company)->storage)->toBe('550e8400-e29b-41d4-a716-446655440000.ownership_test_companies')
+            ->and($connection->getQueryLog())->toHaveCount(2)
+            ->and(fn () => $resolver->resolve($before))->toThrow(OwnershipViolation::class);
+    } finally {
+        $connection->disableQueryLog();
+        $connection->flushQueryLog();
+    }
+});
+
 it('rejects a replacement declaration after immutable preparation', function (): void {
     $plan = app(OwnershipAdoptionCoordinator::class)->prepare(['fixture'], [$this->mapping], $this->operation);
     $reconfigured = new OwnershipResourceRegistry;

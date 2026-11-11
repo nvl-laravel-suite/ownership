@@ -137,3 +137,46 @@ it('refuses direct adapter calls outside their registered coordinator phase', fu
     expect(fn () => $phase === 'backfill' ? $adapter->backfill($plan, null, 100) : $adapter->{$phase}($plan))
         ->toThrow(OwnershipViolation::class);
 })->with(['prepare', 'backfill', 'verify', 'activate']);
+
+it('refreshes constraints of an active fresh host graph that has since received records', function (): void {
+    $this->allowOwners();
+    $coordinator = app(OwnershipAdoptionCoordinator::class);
+    $plan = $coordinator->prepare(['host-assets'], [], $this->operation);
+    $coordinator->backfill($plan, 100, $this->operation);
+    $coordinator->activate($plan, $this->operation);
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        app(OwnershipWriter::class)->create(ColumnAsset::class, fn (OwnershipAssignment $assignment): ColumnAsset => ColumnAsset::query()->create([
+            ...$assignment->attributes(), 'id' => 7, 'name' => 'private',
+        ]));
+    });
+
+    $coordinator->refreshConstraints($coordinator->resume($plan->id), new OwnershipOperation('ownership.constraints.refresh', 'fixture', '1'));
+
+    expect(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
+        ->and(DB::table('nvl_ownership_resource_markers')->pluck('state')->unique()->all())->toBe(['active'])
+        ->and(DB::table('ownership_test_column_assets')->count())->toBe(1);
+});
+
+it('restores a tampered native trigger body when constraints are refreshed', function (): void {
+    $this->allowOwners();
+    $coordinator = app(OwnershipAdoptionCoordinator::class);
+    $plan = $coordinator->prepare(['host-assets'], [], $this->operation);
+    $coordinator->backfill($plan, 100, $this->operation);
+    $coordinator->activate($plan, $this->operation);
+    $connection = DB::connection();
+    $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_column_assets|insert|valid'), 0, 32);
+    $forged = ['id' => 9, 'company_id' => 7, 'name' => 'forged', 'owner_scope_key' => 'not-a-partition'];
+    expect(fn () => DB::table('ownership_test_column_assets')->insert($forged))->toThrow(QueryException::class);
+    match ($connection->getDriverName()) {
+        'pgsql' => $connection->statement('CREATE OR REPLACE FUNCTION "'.$name.'_fn"() RETURNS trigger LANGUAGE plpgsql AS $forged$ BEGIN RETURN NEW; END; $forged$'),
+        'sqlite' => $connection->unprepared('DROP TRIGGER "'.$name.'"; CREATE TRIGGER "'.$name.'" BEFORE INSERT ON "ownership_test_column_assets" FOR EACH ROW WHEN 0 BEGIN SELECT 1; END'),
+        default => $connection->unprepared('DROP TRIGGER `'.$name.'`; CREATE TRIGGER `'.$name.'` BEFORE INSERT ON `ownership_test_column_assets` FOR EACH ROW SET @nvl_forged = 1'),
+    };
+    DB::table('ownership_test_column_assets')->insert($forged);
+    DB::table('ownership_test_column_assets')->where('id', 9)->delete();
+
+    $coordinator->refreshConstraints($coordinator->resume($plan->id), new OwnershipOperation('ownership.constraints.refresh', 'fixture', '1'));
+
+    expect(fn () => DB::table('ownership_test_column_assets')->insert($forged))->toThrow(QueryException::class)
+        ->and(DB::table('ownership_test_column_assets')->count())->toBe(0);
+});

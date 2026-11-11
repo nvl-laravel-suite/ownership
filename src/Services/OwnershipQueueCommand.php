@@ -43,7 +43,8 @@ final readonly class OwnershipQueueCommand
      */
     public function validate(array $data, OwnershipJobEnvelope $envelope): void
     {
-        if ($envelope->context()->mode !== OwnershipContextMode::Disabled
+        $unowned = $envelope->context()->mode === OwnershipContextMode::Unresolved && is_string($data['commandName']) && $this->declaredUnowned($data['commandName']);
+        if ($envelope->context()->mode !== OwnershipContextMode::Disabled && ! $unowned
             && (! is_string($data['commandName']) || (! is_subclass_of($data['commandName'], OwnershipQueuedJob::class) && ! $this->container->make(OwnershipQueueCarrier::class)->nativeWrapper($data['commandName'])))) {
             throw new OwnershipViolation('Enabled owner commands require the captured envelope contract.');
         }
@@ -87,11 +88,11 @@ final readonly class OwnershipQueueCommand
                     && is_subclass_of(((array) $carrier)['__PHP_Incomplete_Class_Name'], OwnershipQueuedJob::class)
                     && $this->containsEnvelope($carrier, 0)) {
                     $found = true;
-                } elseif (is_object($carrier)) {
+                } elseif (is_object($carrier) && ! $unowned) {
                     throw new OwnershipViolation('The native wrapper carrier lacks explicit owner capture.');
                 }
             }
-            if (! $found) {
+            if (! $found && ! $unowned) {
                 throw new OwnershipViolation('Owner commands and native wrappers must carry a serialized captured envelope.');
             }
             $batchId = $properties['batchId'] ?? null;
@@ -110,6 +111,21 @@ final readonly class OwnershipQueueCommand
             }
         }
         $this->inspect($properties, $envelope, 0);
+    }
+
+    /**
+     * Report whether the host declared this exact command class as uncaptured work that runs with no owner authority.
+     *
+     * @throws OwnershipConfigurationInvalid When the declaration is not a list of class names
+     */
+    public function declaredUnowned(string $class): bool
+    {
+        $declared = $this->container->make('config')->get('nvl-ownership.queue.unowned_jobs', []);
+        if (! is_array($declared) || ! array_is_list($declared) || array_any($declared, static fn (mixed $name): bool => ! is_string($name) || $name === '')) {
+            throw new OwnershipConfigurationInvalid('nvl-ownership.queue.unowned_jobs must be a list of job class names.');
+        }
+
+        return in_array($class, $declared, true);
     }
 
     /** Parse with all user classes disabled; malformed bytes never reach native deserialization. */
@@ -176,7 +192,8 @@ final readonly class OwnershipQueueCommand
                             throw new OwnershipViolation('The chained command representation is invalid.');
                         }
                         if ($envelope->context()->mode !== OwnershipContextMode::Disabled
-                            && (! is_subclass_of($matches[2], OwnershipQueuedJob::class) || ! $this->containsEnvelope($chain, $depth + 1))) {
+                            && (! is_subclass_of($matches[2], OwnershipQueuedJob::class) || ! $this->containsEnvelope($chain, $depth + 1))
+                            && ! ($envelope->context()->mode === OwnershipContextMode::Unresolved && $this->declaredUnowned($matches[2]))) {
                             throw new OwnershipViolation('Chained owner jobs require the captured envelope contract.');
                         }
                         $this->inspect($chain, $envelope, $depth + 1);

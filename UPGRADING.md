@@ -1,12 +1,12 @@
 # Upgrading to ownership
 
-## NVL Light: planned family 7
+## NVL Light: family 7
 
 Light requires PHP 8.4 and Laravel 13. Replace retired package Actions, transport DTOs, HTTP endpoints and generated frontend types with host-owned adapters around the native services documented in [README.md](README.md). Models remain ordinary Eloquent models; domain operations retain their documented policies, validation, locks and lifecycle guarantees. Pass explicit admitted actors and configure optional integrations deliberately.
 
 Upgrade the selected family together. Preserve stored identities, migration ownership, source connections, queue state and operation recovery journals. Review and apply the relevant storage/adoption procedure before accepting writes; installing new code alone does not migrate existing data.
 
-The unreleased 7.x guard corrections enforce exact partition and morph keys,
+The 7.x guard corrections enforce exact partition and morph keys,
 immutable scalar bytes, and MariaDB native UUID text identities. Existing stored
 triggers need the explicit `OwnershipAdoptionCoordinator::refreshConstraints()`
 procedure in [README.md](README.md), under authorized maintenance and the original
@@ -17,6 +17,15 @@ original conservation digests and must resume against that same resource state.
 An earlier experimental replacement-plan attempt may already have left an
 interrupted run; preserve that evidence for reviewed recovery rather than
 deleting its run, mappings or source markers.
+
+`nvl:queue:retry` is registered by `nvl/core`; the class
+`Nvl\Ownership\Console\Commands\QueueQuarantineRetryCommand` no longer exists. The
+command name, arguments and output are unchanged. Once the runtime is enabled with
+an owned resource, uncaptured framework or third-party queued commands are refused
+at dispatch unless their exact class is listed in
+`nvl-ownership.queue.unowned_jobs`; see "Queues, system and central work" in
+[README.md](README.md). To add an owned resource to an adopted installation, follow
+"Adding a resource after adoption" there.
 
 ## Historical upgrade notes
 

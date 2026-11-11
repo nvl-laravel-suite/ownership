@@ -361,7 +361,7 @@ it('replays a committed backfill page and conserves populated sources through in
             $owner = $assignments[$resource][$offset];
             expect((string) $row->company_id)->toBe($owner->key)
                 ->and($row->owner_scope_key)->toBe($owner->scopeKey())
-                ->and(json_decode($row->owner_reference, true, 512, JSON_THROW_ON_ERROR))->toBe($owner->toArray())
+                ->and(json_decode($row->owner_reference, true, 512, JSON_THROW_ON_ERROR))->toEqual($owner->toArray())
                 ->and($row->payload)->toBe($resource.'-'.($offset + 1));
         }
     }
@@ -567,3 +567,50 @@ it('rejects empty unscoped resources before planning or preparing any adoption s
         unlink($path);
     }
 })->with(['plan', 'prepare']);
+
+it('validates populated mappings once before and once after each adapter callback', function (): void {
+    $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
+    {
+        public function authorize(OwnershipOperation $operation): void {}
+    });
+    $mappings = [];
+    foreach (['sqlite' => 'fixture.records', 'ownership_remote' => 'remote.records'] as $connection => $resource) {
+        DB::connection($connection)->table('ownership_test_records')->insert(array_map(static fn (int $id): array => ['id' => $id], range(2, 150)));
+        foreach (range(1, 150) as $id) {
+            $mappings[] = new OwnershipMapping($resource, (string) $id, $this->owner);
+        }
+    }
+    $queries = 0;
+    $validations = 0;
+    DB::listen(static function (QueryExecuted $query) use (&$queries, &$validations): void {
+        $queries++;
+        if (preg_match('/^select .id. from .ownership_test_records. where .id. = \?/i', $query->sql) === 1) {
+            $validations++;
+        }
+    });
+    $measure = static function (Closure $phase) use (&$queries, &$validations): array {
+        [$queries, $validations] = [0, 0];
+        $phase();
+
+        return ['validations' => $validations, 'queries' => $queries];
+    };
+    $coordinator = app(OwnershipAdoptionCoordinator::class);
+    $plan = null;
+    $metrics = [
+        'prepare' => $measure(function () use ($coordinator, $mappings, &$plan): void {
+            $plan = $coordinator->prepare(['fixture', 'remote'], $mappings, $this->operation);
+        }),
+        'backfill' => $measure(fn () => expect($coordinator->backfill($plan, 1000, $this->operation))->toBeTrue()),
+        'verify' => $measure(fn () => expect($coordinator->verify($plan)->passed())->toBeTrue()),
+        'activate' => $measure(fn () => $coordinator->activate($plan, $this->operation)),
+    ];
+    $path = getenv('NVL_ADOPTION_METRICS_PATH');
+    if (is_string($path) && $path !== '') {
+        file_put_contents($path, json_encode(['mappings' => 300, 'adapters' => 2, ...$metrics], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
+
+    // 300 mappings, two adapters: one pass at phase entry (or ingestion) and one after every adapter callback.
+    expect(array_column($metrics, 'validations', null))->toBe([300 * 3, 300 * 5, 300 * 3, 300 * 8])
+        ->and(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
+        ->and(DB::table('ownership_test_records')->whereNull('owner_scope_key')->count())->toBe(0);
+});

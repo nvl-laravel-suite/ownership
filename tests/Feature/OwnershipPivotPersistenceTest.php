@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Contracts\OwnershipAdoptionAccess;
+use Nvl\Ownership\Queue\OwnershipCapturedModels;
 use Nvl\Ownership\Services\OwnerIdentityResolver;
 use Nvl\Ownership\Services\OwnershipAdoptionCoordinator;
 use Nvl\Ownership\Services\OwnershipAdoptionRegistry;
@@ -130,4 +131,14 @@ it('retains the enclosing transaction rollback after a successful owned pivot de
         expect($class::query()->count())->toBe(1);
     });
     expect(DB::transactionLevel())->toBe(0);
+})->with('owned native pivots');
+
+it('refuses to queue an owned pivot that carries only its composite identity', function (string $class): void {
+    adoptOwnedNativePivot($class);
+    app(OwnershipRunner::class)->run(Company::findOrFail(7), Actor::findOrFail(1), function () use ($class): void {
+        $pivot = $class::fromRawAttributes(Company::findOrFail(7), ['company_id' => 7], 'ownership_test_records', true)->setPivotKeys('company_id', 'company_id');
+
+        expect($pivot->getQueueableId())->toContain('company_id:7')
+            ->and(fn () => app(OwnershipCapturedModels::class)->validate($pivot))->toThrow(OwnershipViolation::class, 'loaded without its primary key [id]');
+    });
 })->with('owned native pivots');

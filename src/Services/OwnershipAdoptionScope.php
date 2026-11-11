@@ -40,10 +40,16 @@ final class OwnershipAdoptionScope implements OwnershipMaintenanceState
         }
     }
 
+    /** Report the coordinator's constraint refresh of an already active graph. */
+    public function refreshing(): bool
+    {
+        return ($this->invocation['phase'] ?? null) === 'refresh';
+    }
+
     /** Allow schema helpers only in the coordinator's explicit nontransactional DDL phases. */
     public function assertSchemaAllowed(): void
     {
-        if ($this->invocation === null || ! in_array($this->invocation['phase'], ['prepare', 'activate'], true)) {
+        if ($this->invocation === null || ! in_array($this->invocation['phase'], ['prepare', 'activate', 'refresh'], true)) {
             throw new OwnershipViolation('Ownership schema changes require a coordinated prepare or activate phase.');
         }
     }

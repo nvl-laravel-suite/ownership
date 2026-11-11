@@ -72,7 +72,6 @@ These commands are registered by Composer-discovered package providers. Feature-
 - `php artisan nvl:ownership:doctor --help`
 - `php artisan nvl:ownership:plan --help`
 - `php artisan nvl:ownership:prepare --help`
-- `php artisan nvl:queue:retry --help`
 - `php artisan nvl:ownership:verify --help`
 
 ## Verify the consumer

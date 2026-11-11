@@ -23,7 +23,6 @@ use Nvl\Ownership\Console\Commands\BackfillOwnershipMigrationCommand;
 use Nvl\Ownership\Console\Commands\OwnershipDoctorCommand;
 use Nvl\Ownership\Console\Commands\PlanOwnershipMigrationCommand;
 use Nvl\Ownership\Console\Commands\PrepareOwnershipMigrationCommand;
-use Nvl\Ownership\Console\Commands\QueueQuarantineRetryCommand;
 use Nvl\Ownership\Console\Commands\VerifyOwnershipMigrationCommand;
 use Nvl\Ownership\Contracts\CentralAccess;
 use Nvl\Ownership\Contracts\OwnerAccess;
@@ -51,14 +50,17 @@ use Nvl\Ownership\Services\OwnershipBoundary;
 use Nvl\Ownership\Services\OwnershipCanonicalModels;
 use Nvl\Ownership\Services\OwnershipConfiguration;
 use Nvl\Ownership\Services\OwnershipCreationScope;
+use Nvl\Ownership\Services\OwnershipDoctor;
 use Nvl\Ownership\Services\OwnershipMaintenanceQueueGuard;
 use Nvl\Ownership\Services\OwnershipModelPersistence;
 use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipReadiness;
 use Nvl\Ownership\Services\OwnershipRunner;
+use Nvl\Ownership\Services\OwnershipVerifiedAdmissions;
 use Nvl\Ownership\Services\OwnershipWriteLease;
 use Nvl\Ownership\Services\PackageOwnershipWriter;
 use Nvl\Ownership\Services\ScopedOwnershipContext;
+use Nvl\Support\Doctor\PackageDoctorContributor;
 use Nvl\Support\Ownership\Contracts\OwnershipBatchOptions as BatchOptionsContract;
 use Nvl\Support\Ownership\Contracts\OwnershipBoundary as BoundaryContract;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
@@ -93,12 +95,14 @@ final class OwnershipServiceProvider extends ServiceProvider
         $this->app->register(SupportServiceProvider::class);
         $this->mergePackageConfiguration(__DIR__.'/../../config/nvl-ownership.php', 'ownership');
         $this->app->instance('nvl.ownership.runtime', true);
+        PackageDoctorContributor::register($this->app, 'nvl/ownership', fn (): array => $this->app->make(OwnershipDoctor::class)->inspect());
         $this->app->singletonIf(OwnershipResourceRegistry::class);
         $this->app->singletonIf(OwnershipAdoptionRegistry::class);
         $this->app->singletonIf(OwnershipCanonicalModels::class);
         $this->app->scopedIf(OwnershipAdoptionScope::class);
         $this->app->scopedIf(OwnershipCreationScope::class);
         $this->app->scopedIf(OwnershipWriteLease::class);
+        $this->app->scopedIf(OwnershipVerifiedAdmissions::class);
         $this->app->bind(OwnershipModelGuard::class, OwnershipModelObserver::class);
         $this->app->bind(PersistenceContract::class, OwnershipModelPersistence::class);
         $this->app->extend(ContractsOwnershipReadiness::class, static fn ($readiness, Application $app) => $readiness instanceof UnavailableOwnershipReadiness ? $app->make(OwnershipReadiness::class) : $readiness);
@@ -141,15 +145,15 @@ final class OwnershipServiceProvider extends ServiceProvider
             $this->app->extend(DatabaseBatchRepository::class, static fn ($repository) => is_object($repository) && in_array($repository::class, [DatabaseBatchRepository::class, CoreBatchRepository::class], true) ? OwnershipDatabaseBatchRepository::fromNative($repository) : $repository);
             $events = $this->app->make(Dispatcher::class);
             $events->listen(ConnectionEstablished::class, static fn (ConnectionEstablished $event) => OwnershipWriteLease::register($event->connection));
-            $events->listen(TransactionCommitting::class, function (TransactionCommitting $event): void {
-                $this->app->make(OwnershipWriteLease::class)->assertCommitAllowed($event->connection);
+            $events->listen(TransactionCommitting::class, static function (TransactionCommitting $event): void {
+                Container::getInstance()->make(OwnershipWriteLease::class)->assertCommitAllowed($event->connection);
             });
             foreach ($this->app->make(DatabaseManager::class)->getConnections() as $connection) {
                 OwnershipWriteLease::register($connection);
             }
         }
         if ($this->app->runningInConsole() && $this->app->make(Repository::class)->get('nvl-ownership.enabled') === true) {
-            $this->commands([QueueQuarantineRetryCommand::class, OwnershipDoctorCommand::class, PlanOwnershipMigrationCommand::class, PrepareOwnershipMigrationCommand::class, BackfillOwnershipMigrationCommand::class, VerifyOwnershipMigrationCommand::class, ActivateOwnershipMigrationCommand::class]);
+            $this->commands([OwnershipDoctorCommand::class, PlanOwnershipMigrationCommand::class, PrepareOwnershipMigrationCommand::class, BackfillOwnershipMigrationCommand::class, VerifyOwnershipMigrationCommand::class, ActivateOwnershipMigrationCommand::class]);
         }
         $this->publishes([__DIR__.'/../../resources/boost/skills' => base_path('.agents/skills')], 'nvl-ownership-skills');
         $this->publishes([__DIR__.'/../../config/nvl-ownership.php' => config_path('nvl-ownership.php')], 'nvl-ownership-config');

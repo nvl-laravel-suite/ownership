@@ -66,14 +66,15 @@ class OwnershipCallQueuedHandler extends CallQueuedHandler implements OwnershipQ
         }
         $command = parent::getCommand($data);
         $envelope = OwnershipJobEnvelope::fromArray($data['nvl_ownership']);
-        if ($envelope->context()->mode !== OwnershipContextMode::Disabled
-            && (! is_object($command)
-                || $this->container->make(OwnershipQueueCarrier::class)->envelope($command)->toArray() !== $envelope->toArray())) {
-            throw new OwnershipViolation('The carried job envelope differs from the worker payload.');
-        }
-
         if ($envelope->context()->mode !== OwnershipContextMode::Disabled) {
-            $this->container->make(OwnershipQueueCommand::class)->validateRestored($command);
+            $carrier = $this->container->make(OwnershipQueueCarrier::class);
+            $inspector = $this->container->make(OwnershipQueueCommand::class);
+            $unowned = is_object($command) && ! $carrier->captured($command)
+                && $envelope->context()->mode === OwnershipContextMode::Unresolved && $inspector->declaredUnowned($command::class);
+            if (! is_object($command) || (! $unowned && $carrier->envelope($command)->toArray() !== $envelope->toArray())) {
+                throw new OwnershipViolation('The carried job envelope differs from the worker payload.');
+            }
+            $inspector->validateRestored($command);
         }
 
         return $command;

@@ -9,6 +9,7 @@
             ],
             "advanced": [
                 "central_operations",
+                "queue.unowned_jobs",
                 "system_operations"
             ]
         }

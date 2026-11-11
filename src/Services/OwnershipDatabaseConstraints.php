@@ -157,7 +157,7 @@ final readonly class OwnershipDatabaseConstraints
             $name = $this->name($connection, $table, $event, $this->referencePurpose($foreignKey, $parentTable, $parentKey));
             $present = match ($connection->getDriverName()) {
                 'sqlite' => $connection->selectOne("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ?", [$name], false),
-                'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $connection->getTablePrefix().$table], false),
+                'pgsql' => $connection->selectOne('SELECT tgname FROM pg_trigger WHERE tgname = ? AND tgrelid = ?::regclass AND NOT tgisinternal', [$name, $this->inspector->physicalTable($connection, $table)], false),
                 'mysql','mariadb' => $connection->selectOne('SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND TRIGGER_NAME = ? AND EVENT_OBJECT_TABLE = ?', [$name, $connection->getTablePrefix().$table], false),
                 default => null,
             };
@@ -277,7 +277,7 @@ final readonly class OwnershipDatabaseConstraints
         $physicalTable = $connection->getTablePrefix().$table;
         $rows = match ($connection->getDriverName()) {
             'sqlite' => $connection->select("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? AND name IN ({$placeholders})", [$physicalTable, ...$names], false),
-            'pgsql' => $connection->select("SELECT tgname AS name FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal AND tgname IN ({$placeholders})", [$physicalTable, ...$names], false),
+            'pgsql' => $connection->select("SELECT tgname AS name FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal AND tgname IN ({$placeholders})", [$this->inspector->physicalTable($connection, $table), ...$names], false),
             'mysql', 'mariadb' => $connection->select("SELECT TRIGGER_NAME AS name FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ? AND TRIGGER_NAME IN ({$placeholders})", [$physicalTable, ...$names], false),
             default => [],
         };
@@ -296,7 +296,7 @@ final readonly class OwnershipDatabaseConstraints
         }
     }
 
-    /** Install idempotently only while the coordinator's source-session lease is held. */
+    /** Replace any installed definition, only while the coordinator's source-session lease is held. */
     private function trigger(Connection $connection, string $table, string $event, string $purpose, string $condition): void
     {
         $grammar = $connection->getQueryGrammar();
@@ -305,7 +305,8 @@ final readonly class OwnershipDatabaseConstraints
         $event = strtoupper($event);
         $message = 'NVL ownership partition is invalid or immutable';
         if ($connection->getDriverName() === 'sqlite') {
-            $connection->statement("CREATE TRIGGER IF NOT EXISTS {$name} BEFORE {$event} ON {$target} FOR EACH ROW WHEN {$condition} BEGIN SELECT RAISE(ABORT, '{$message}'); END");
+            $connection->statement("DROP TRIGGER IF EXISTS {$name}");
+            $connection->statement("CREATE TRIGGER {$name} BEFORE {$event} ON {$target} FOR EACH ROW WHEN {$condition} BEGIN SELECT RAISE(ABORT, '{$message}'); END");
 
             return;
         }
