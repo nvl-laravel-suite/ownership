@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject switching between distinct numeric string owner keys inside a participating transaction while allowing equivalent owner references.
+
 ## [7.0.5] - 2026-11-13
 
 ### Changed

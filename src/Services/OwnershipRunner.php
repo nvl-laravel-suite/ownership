@@ -183,7 +183,7 @@ final readonly class OwnershipRunner implements RunnerContract
         $levels = [];
         foreach ($connections->participating() as $id => $connection) {
             $levels[$id] = $connection->transactionLevel();
-            if ($levels[$id] > 0 && ($previous->mode !== $snapshot->mode || $previous->owner != $snapshot->owner || $previous->generations !== $snapshot->generations)) {
+            if ($levels[$id] > 0 && ($previous->mode !== $snapshot->mode || $previous->owner?->toArray() !== $snapshot->owner?->toArray() || $previous->generations !== $snapshot->generations)) {
                 throw new OwnershipViolation('Ownership context cannot change inside a participating transaction.');
             }
         }

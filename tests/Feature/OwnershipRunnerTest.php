@@ -12,6 +12,8 @@ use Nvl\Ownership\Contracts\OwnershipRunner as RunnerContract;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
+use Nvl\Ownership\Tests\Fixtures\Resources\StringCompany;
 use Nvl\Ownership\Tests\Fixtures\StatefulOwnershipParticipant;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
@@ -68,6 +70,49 @@ it('rejects an owner change inside a participating transaction', function (): vo
         try {
             expect(fn () => $runner->run(Company::query()->findOrFail(8), Actor::query()->firstOrFail(), static fn () => 'unsafe'))->toThrow(OwnershipViolation::class);
             expect(app(OwnershipContext::class)->requireOwner()->key)->toBe('7')
+                ->and(DB::transactionLevel())->toBe(1);
+        } finally {
+            DB::rollBack();
+        }
+    });
+});
+
+it('rejects distinct numeric string owners inside a participating transaction', function (): void {
+    $this->allowOwners(['007', '7']);
+    ResourceScenario::install($this->app);
+    $runner = app(OwnershipRunner::class);
+    $actor = Actor::query()->firstOrFail();
+
+    $runner->run(StringCompany::query()->findOrFail('007'), $actor, function () use ($runner, $actor): void {
+        DB::beginTransaction();
+        try {
+            expect(fn () => $runner->run(StringCompany::query()->findOrFail('7'), $actor, static fn () => 'unsafe'))
+                ->toThrow(OwnershipViolation::class, 'Ownership context cannot change inside a participating transaction.');
+            expect(app(OwnershipContext::class)->requireOwner()->key)->toBe('007')
+                ->and(DB::transactionLevel())->toBe(1);
+        } finally {
+            DB::rollBack();
+        }
+    });
+});
+
+it('allows equivalent distinct owner references inside a participating transaction', function (): void {
+    $this->allowOwners(['007']);
+    ResourceScenario::install($this->app);
+    $runner = app(OwnershipRunner::class);
+    $actor = Actor::query()->firstOrFail();
+
+    $runner->run(StringCompany::query()->findOrFail('007'), $actor, function () use ($runner, $actor): void {
+        $previous = app(OwnershipContext::class)->requireOwner();
+        DB::beginTransaction();
+        try {
+            $runner->run(StringCompany::query()->findOrFail('007'), $actor, function () use ($previous): void {
+                $current = app(OwnershipContext::class)->requireOwner();
+                expect($current)->not->toBe($previous)
+                    ->and($current->toArray())->toBe($previous->toArray())
+                    ->and(DB::transactionLevel())->toBe(1);
+            });
+            expect(app(OwnershipContext::class)->requireOwner())->toBe($previous)
                 ->and(DB::transactionLevel())->toBe(1);
         } finally {
             DB::rollBack();
