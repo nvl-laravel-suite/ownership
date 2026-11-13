@@ -6,7 +6,6 @@ namespace Nvl\Ownership\Services;
 
 use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\Schema\Blueprint;
 use Nvl\Support\OwnerRegistry;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
@@ -141,7 +140,7 @@ final readonly class OwnershipSchema
         $this->assertReady($resource);
     }
 
-    /** Keep canonical partition bytes exact without consuming four bytes per indexed character. */
+    /** Preserve compatible partition column metadata during adoption. */
     private function scopeColumn(Connection $connection, string $table, bool $required = false): void
     {
         if ($connection->transactionLevel() !== 0) {
@@ -149,15 +148,10 @@ final readonly class OwnershipSchema
         }
         $schema = $connection->getSchemaBuilder();
         $existing = array_find($schema->getColumns($table), static fn (array $column): bool => $column['name'] === 'owner_scope_key');
-        $mysql = in_array($connection->getDriverName(), ['mysql', 'mariadb'], true);
         if ($existing !== null && $existing['generation'] !== null) {
             throw new OwnershipConfigurationInvalid('Generated partition columns require a reviewed migration.');
         }
-        $convert = $mysql && $existing !== null && $existing['collation'] !== 'ascii_bin';
-        if ($convert) {
-            $this->assertScopeEncodingChange($connection, $table);
-        }
-        if ($existing !== null && ! $convert && (! $required || ! $existing['nullable'])) {
+        if ($existing !== null && (! $required || ! $existing['nullable'])) {
             return;
         }
         $nullable = $existing['nullable'] ?? true;
@@ -165,11 +159,8 @@ final readonly class OwnershipSchema
             $nullable = false;
         }
         $default = $this->scopeDefault($connection, $existing['default'] ?? null);
-        $schema->table($table, static function (Blueprint $blueprint) use ($existing, $mysql, $nullable, $default): void {
+        $schema->table($table, static function (Blueprint $blueprint) use ($existing, $nullable, $default): void {
             $column = $blueprint->string('owner_scope_key', 191)->nullable($nullable);
-            if ($mysql) {
-                $column->charset('ascii')->collation('ascii_bin');
-            }
             if ($existing !== null) {
                 if ($default !== null) {
                     $column->default($default);
@@ -189,9 +180,7 @@ final readonly class OwnershipSchema
             return null;
         }
         if (is_string($default)) {
-            $quoted = $connection->getDriverName() === 'pgsql'
-                || ($connection instanceof MySqlConnection && $connection->isMaria());
-            if ($quoted) {
+            if ($connection->getDriverName() === 'pgsql') {
                 if (preg_match('/\ANULL(?:::(?:character varying|text)(?:\([0-9]+\))?)?\z/D', $default) === 1) {
                     return null;
                 }
@@ -203,28 +192,6 @@ final readonly class OwnershipSchema
             }
         }
         throw new OwnershipConfigurationInvalid('Partition defaults require canonical literals or a reviewed migration.');
-    }
-
-    /** Reject lossy conversion or implicit removal of any host partition foreign key. */
-    private function assertScopeEncodingChange(Connection $connection, string $table): void
-    {
-        foreach ($connection->table($table)->useWritePdo()->whereNotNull('owner_scope_key')->select('owner_scope_key')->cursor() as $row) {
-            $key = $row->owner_scope_key;
-            if (! is_string($key) || preg_match('/\A(?:central|owner:[a-f0-9]{64})\z/D', $key) !== 1) {
-                throw new OwnershipConfigurationInvalid('Partition encoding changes require canonical scope keys.');
-            }
-        }
-        $schema = $connection->getSchemaBuilder();
-        foreach ($schema->getForeignKeys($table) as $foreign) {
-            if (in_array('owner_scope_key', $foreign['columns'], true)) {
-                throw new OwnershipConfigurationInvalid('Partition foreign keys require a reviewed migration before changing their encoding.');
-            }
-        }
-        [$database, $logicalTable] = $schema->parseSchemaAndTable($table);
-        $incoming = $connection->selectOne('SELECT 1 AS dependency FROM information_schema.KEY_COLUMN_USAGE WHERE REFERENCED_TABLE_SCHEMA = ? AND REFERENCED_TABLE_NAME = ? AND REFERENCED_COLUMN_NAME = ? LIMIT 1', [$database ?? $connection->getDatabaseName(), $connection->getTablePrefix().$logicalTable, 'owner_scope_key'], false);
-        if ($incoming !== null) {
-            throw new OwnershipConfigurationInvalid('Partition foreign keys require a reviewed migration before changing their encoding.');
-        }
     }
 
     /** Recheck physical constraints without treating a marker as sufficient schema evidence. */
@@ -376,7 +343,7 @@ final readonly class OwnershipSchema
     }
 
     /**
-     * Add the composite partition key unless an equal one exists; a table prefix is part of a new name, which MySQL keeps database-wide.
+     * Add the composite partition key unless an equal one exists; use the prefix to keep names distinct in a shared schema.
      *
      * @param  list<string>  $columns
      * @param  list<string>  $parentColumns

@@ -28,7 +28,7 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Symfony\Component\Process\Process;
 
 it('preserves captured ownership through a real worker retry exhaustion and raw quarantine', function (string $driver): void {
-    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
         $this->markTestSkipped('Requires the explicitly isolated native persistence database.');
     }
     $redisPort = getenv('NVL_OWNERSHIP_TEST_REDIS_PORT');

@@ -6,7 +6,14 @@ namespace Nvl\Ownership\Tests\Fixtures\Adoption;
 
 use Illuminate\Database\Eloquent\Model;
 
-/** Native source record used to exercise actual adoption storage. */
+/**
+ * Native source record used to exercise actual adoption storage.
+ *
+ * @property int|string $id
+ * @property int|string|null $company_id
+ * @property string|null $owner_scope_key
+ * @property string|null $owner_reference
+ */
 class Record extends Model
 {
     protected $table = 'ownership_test_records';

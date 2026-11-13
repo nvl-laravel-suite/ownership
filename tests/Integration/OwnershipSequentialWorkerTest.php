@@ -19,7 +19,7 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Symfony\Component\Process\Process;
 
 it('restores authority and locale between exceptional owned global and denied jobs in one worker', function (): void {
-    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
         $this->markTestSkipped('Requires the explicitly dedicated native source and independent worker.');
     }
     $this->allowOwners([7, 8, 9]);

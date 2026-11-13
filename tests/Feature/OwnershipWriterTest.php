@@ -13,6 +13,7 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\OwnershipWriter;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Resources\CapturedOperation;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
@@ -20,9 +21,17 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Ownership\ValueObjects\OwnershipAssignment;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    if (in_array('fresh-adoption', $this->groups(), true)) {
+        ResourceScenario::installColumn($this->app);
+
+        return;
+    }
+
+    $this->installNativeRootScenario(['assets.column', 'assets.pivot', 'assets.captured']);
 });
 
 it('coordinates package captured roots without accepting caller supplied ownership', function (): void {
@@ -104,7 +113,7 @@ it('blocks a saving listener from redirecting SQL to another already connected d
     });
     expect(DB::connection('ownership_other')->table('ownership_test_column_assets')->count())->toBe(0)
         ->and(DB::table('ownership_test_column_assets')->where('id', 3)->exists())->toBeFalse();
-});
+})->group('fresh-adoption');
 
 it('rejects a replaced source PDO before SQL and discards pending commit effects', function (): void {
     config(['database.connections.ownership_other' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
@@ -136,7 +145,7 @@ it('rejects a replaced source PDO before SQL and discards pending commit effects
         }
         $source->setPdo($original);
     }
-});
+})->group('fresh-adoption');
 
 it('checks the source session after host SQL callbacks before executing the statement', function (): void {
     config(['database.connections.ownership_other' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '', 'foreign_key_constraints' => true]]);
@@ -167,7 +176,7 @@ it('checks the source session after host SQL callbacks before executing the stat
         }
         $source->setPdo($original);
     }
-});
+})->group('fresh-adoption');
 
 it('rejects an early native commit before assignment or after-commit callbacks escape', function (): void {
     $effects = [];
@@ -182,4 +191,4 @@ it('rejects an early native commit before assignment or after-commit callbacks e
     expect(fn () => app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), fn () => app(OwnershipWriter::class)->create(ColumnAsset::class, fn (OwnershipAssignment $assignment): ColumnAsset => ColumnAsset::query()->create([...$assignment->attributes(), 'id' => 3, 'name' => 'early-commit']))))->toThrow(OwnershipViolation::class);
     expect(DB::table('ownership_test_column_assets')->where('id', 3)->exists())->toBeFalse()
         ->and($effects)->toBe([]);
-});
+})->group('fresh-adoption');

@@ -10,11 +10,15 @@ use Nvl\Ownership\Services\OwnershipAdoptionStore;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipBackfillResult;
 use Nvl\Ownership\ValueObjects\OwnershipVerification;
+use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use RuntimeException;
 
 /** Exercises resumable source writes rather than fabricating installation markers. */
 class RecordsAdapter implements OwnershipAdoptionAdapter
 {
+    /** Batch the single-owner performance fixture while preserving ordinary per-record writes. */
+    public function __construct(private readonly ?OwnerReference $batchOwner = null) {}
+
     /** @return list<string> */
     public function resources(): array
     {
@@ -47,9 +51,17 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         $key = $this->resources()[0];
         $model = $key === 'fixture.records' ? new Record : new RemoteRecord;
         $rows = $model->newQuery()->when($cursor !== null, fn ($query) => $query->where('id', '>', $cursor))->orderBy('id')->limit($limit)->get();
+        $mappings = app(OwnershipAdoptionStore::class);
         foreach ($rows as $row) {
-            $assignment = app(OwnershipAdoptionStore::class)->forRecord($plan, $key, $row->nativeId());
-            $row->forceFill(['company_id' => $assignment->requireOwner()->key, 'owner_scope_key' => $assignment->requireOwner()->scopeKey(), 'owner_reference' => json_encode($assignment->requireOwner()->toArray(), JSON_THROW_ON_ERROR)])->save();
+            $owner = $mappings->forRecord($plan, $key, $row->nativeId())->requireOwner();
+            if ($this->batchOwner === null) {
+                $row->forceFill($this->ownerAttributes($owner))->save();
+            } elseif ($owner != $this->batchOwner) {
+                throw new RuntimeException('Every row in the batch fixture requires the same reviewed owner.');
+            }
+        }
+        if ($this->batchOwner !== null && $rows->isNotEmpty()) {
+            $model->newQuery()->whereKey($rows->modelKeys())->update($this->ownerAttributes($this->batchOwner));
         }
 
         $last = $rows->last();
@@ -62,6 +74,12 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
     {
         $key = $this->resources()[0];
         $model = $key === 'fixture.records' ? new Record : new RemoteRecord;
+        if ($this->batchOwner !== null) {
+            $mismatch = $model->newQuery()->whereNull('company_id')->orWhere('company_id', '!=', $this->batchOwner->key)->exists();
+
+            return new OwnershipVerification($mismatch ? ['owner_mismatch'] : []);
+        }
+
         foreach ($model->newQuery()->get() as $row) {
             $assignment = app(OwnershipAdoptionStore::class)->forRecord($plan, $key, $row->nativeId());
             $nativeOwner = $row->getAttribute('company_id');
@@ -71,6 +89,12 @@ class RecordsAdapter implements OwnershipAdoptionAdapter
         }
 
         return new OwnershipVerification([]);
+    }
+
+    /** @return array{company_id: string, owner_scope_key: string, owner_reference: string} */
+    private function ownerAttributes(OwnerReference $owner): array
+    {
+        return ['company_id' => $owner->key, 'owner_scope_key' => $owner->scopeKey(), 'owner_reference' => json_encode($owner->toArray(), JSON_THROW_ON_ERROR)];
     }
 
     /** Simulate a nontransactional constraint phase interrupted before publication. */

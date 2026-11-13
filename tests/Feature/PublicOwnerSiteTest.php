@@ -10,9 +10,9 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\PublicOwnerSiteRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\UnownedAsset;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
@@ -24,10 +24,12 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
     app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('assets.unowned', 'assets', UnownedAsset::class, UnownedAsset::ownershipDefinition()));
-    ResourceScenario::install($this->app);
+    $this->installColumnScenario(withPivot: true);
     $this->app->bind(OwnerSiteResolver::class, static fn () => new class implements OwnerSiteResolver
     {
         public function resolve(string $origin): ?VerifiedOwnerSiteContext
@@ -181,7 +183,7 @@ it('rejects missing runtime readiness before entering public work', function ():
         $called = true;
     }))->toThrow(OwnershipSchemaNotReady::class);
     expect($called)->toBeFalse()->and(app(OwnershipContext::class)->snapshot()->mode)->toBe(OwnershipContextMode::Unresolved);
-});
+})->group('fresh-adoption');
 
 it('rejects caller constructed public contexts that bypass canonical origin capabilities', function (): void {
     $forged = new VerifiedOwnerSiteContext(app(OwnerIdentityResolver::class)->reference(Company::findOrFail(7)), 'storefront', 'https://a.public.test', ['assets.column'], ['assets.column']);

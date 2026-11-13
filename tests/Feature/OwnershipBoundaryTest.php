@@ -13,20 +13,22 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\OwnershipWriter;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Resources\CapturedOperation;
 use Nvl\Ownership\Tests\Fixtures\Resources\ChildAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\StringAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\StringCompany;
 use Nvl\Ownership\ValueObjects\OwnershipAssignment;
 use Nvl\Support\Ownership\Contracts\OwnershipBoundary;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    $this->installResourceScenario();
 });
 
 it('scopes column pivot inherited and captured resources to the full admitted native owner', function (): void {
@@ -95,9 +97,13 @@ it('keeps native string owner 007 distinct from 7 without integer or UUID coerci
             }
         }
     });
+    $foreign007 = StringAsset::withoutGlobalScopes()->where('company_key', '007')->firstOrFail();
     foreach (['007', '7'] as $key) {
-        app(OwnershipRunner::class)->run(StringCompany::query()->findOrFail($key), Actor::query()->firstOrFail(), function () use ($key): void {
+        app(OwnershipRunner::class)->run(StringCompany::query()->findOrFail($key), Actor::query()->firstOrFail(), function () use ($key, $foreign007): void {
             expect(StringAsset::query()->pluck('name')->all())->toBe(['private-'.$key]);
+            if ($key === '7') {
+                expect(fn () => app(OwnershipBoundary::class)->assertRecord($foreign007, 'assets.string'))->toThrow(OwnershipViolation::class);
+            }
         });
     }
 });

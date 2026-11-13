@@ -30,7 +30,10 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
 beforeEach(function (): void {
-    LargeGraphFixture::register();
+    LargeGraphFixture::register(
+        in_array('publication-scale', $this->groups(), true) ? LargeGraphFixture::ResourceCount : 1,
+        withAdapters: false,
+    );
     $resources = new OwnershipResourceRegistry;
     foreach (app(OwnershipResourceRegistry::class)->all() as $resource) {
         $resources->register(new OwnershipResourceDefinition($resource->key, $resource->family, $resource->model, OwnershipDefinition::unscoped()));
@@ -59,7 +62,7 @@ it('bounds cold and warm publication probes with the native runtime installed bu
         ->and($payloads)->toHaveCount(2)
         ->and($payloads->pluck('data.nvl_ownership.mode')->all())->toBe(['disabled', 'disabled'])
         ->and(DB::table('ownership_queue_probes')->count())->toBe(0);
-});
+})->group('publication-scale');
 
 it('restores the exact preceding context after successful exceptional and nested disabled callbacks', function (): void {
     $context = app(ScopedOwnershipContext::class);

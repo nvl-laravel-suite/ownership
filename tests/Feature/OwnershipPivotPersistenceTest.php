@@ -78,8 +78,8 @@ function adoptOwnedNativePivot(string $class): void
         'ownership_test.activate_callback' => static fn () => app(OwnershipSchema::class)->constrain('fixture.records'),
     ]);
     $mappings = [];
-    foreach ([7, 8] as $company) {
-        $mappings[] = new OwnershipMapping('fixture.records', '550e8400-e29b-41d4-a716-44665544000'.$company, app(OwnerIdentityResolver::class)->reference(Company::findOrFail($company)));
+    foreach (DB::table('ownership_test_records')->orderBy('id')->pluck('company_id', 'id') as $id => $company) {
+        $mappings[] = new OwnershipMapping('fixture.records', (string) $id, app(OwnerIdentityResolver::class)->reference(Company::findOrFail($company)));
     }
     $operation = new OwnershipOperation('adopt-native-pivots', 'operator', '1');
     $coordinator = app(OwnershipAdoptionCoordinator::class);
@@ -88,23 +88,37 @@ function adoptOwnedNativePivot(string $class): void
     $coordinator->activate($plan, $operation);
 }
 
-it('retains integer cancellation and successful deletion through the owned write lease', function (string $class, string $method): void {
+it('retains integer cancellation and successful deletion through the owned write lease', function (string $class): void {
+    $ids = [
+        'delete' => '550e8400-e29b-41d4-a716-446655440007',
+        'deleteQuietly' => '550e8400-e29b-41d4-a716-446655440017',
+        'deleteOrFail' => '550e8400-e29b-41d4-a716-446655440027',
+    ];
+    DB::table('ownership_test_records')->insert([
+        ['id' => $ids['deleteQuietly'], 'company_id' => 7],
+        ['id' => $ids['deleteOrFail'], 'company_id' => 7],
+    ]);
     adoptOwnedNativePivot($class);
-    app(OwnershipRunner::class)->run(Company::findOrFail(7), Actor::firstOrFail(), function () use ($class, $method): void {
-        $pivot = $class::findOrFail('550e8400-e29b-41d4-a716-446655440007');
-        $cancel = true;
-        $class::deleting(static function () use (&$cancel): bool {
-            return ! $cancel;
-        });
-        expect($pivot->delete())->toBe(0)
-            ->and($pivot->exists)->toBeTrue();
-        $cancel = false;
-        expect($pivot->{$method}())->toBe(1)
-            ->and($pivot->exists)->toBeFalse();
+    $cancel = false;
+    $class::deleting(static function () use (&$cancel): bool {
+        return ! $cancel;
     });
-    expect(DB::table('ownership_test_records')->where('company_id', 7)->exists())->toBeFalse()
-        ->and(DB::table('ownership_test_records')->where('company_id', 8)->exists())->toBeTrue();
-})->with('owned native pivots')->with(['delete', 'deleteQuietly', 'deleteOrFail']);
+    foreach ($ids as $method => $id) {
+        $cancel = true;
+        app(OwnershipRunner::class)->run(Company::findOrFail(7), Actor::firstOrFail(), function () use ($class, $id, $method, &$cancel): void {
+            $pivot = $class::findOrFail($id);
+            expect($pivot->delete())->toBe(0, $method)
+                ->and($pivot->exists)->toBeTrue($method);
+            $cancel = false;
+
+            expect($pivot->{$method}())->toBe(1, $method)
+                ->and($pivot->exists)->toBeFalse($method);
+        });
+        expect(DB::table('ownership_test_records')->where('id', $id)->exists())->toBeFalse($method)
+            ->and(DB::table('ownership_test_records')->where('company_id', 8)->exists())->toBeTrue($method);
+    }
+    expect(DB::table('ownership_test_records')->where('company_id', 7)->exists())->toBeFalse();
+})->with('owned native pivots');
 
 it('denies foreign pivot deletion before observers and native SQL even when quiet', function (string $class): void {
     adoptOwnedNativePivot($class);

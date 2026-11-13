@@ -88,7 +88,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
             }
         }
         $reference = $this->container->make(OwnershipCanonicalResolver::class)->fromPersisted($fresh, $definition, $record->getConnection()->transactionLevel() > 0);
-        if ($reference != $snapshot->owner) {
+        if ($reference?->toArray() !== $snapshot->owner?->toArray()) {
             throw new OwnershipViolation;
         }
     }
@@ -146,7 +146,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
             $before = json_decode($original, true, 16, JSON_THROW_ON_ERROR);
             $after = json_decode($persisted, true, 16, JSON_THROW_ON_ERROR);
 
-            return is_array($before) && is_array($after) && OwnerReference::fromArray($before) == OwnerReference::fromArray($after);
+            return is_array($before) && is_array($after) && OwnerReference::fromArray($before)->toArray() === OwnerReference::fromArray($after)->toArray();
         }
 
         return (is_int($original) || is_string($original)) && (is_int($persisted) || is_string($persisted)) && (string) $original === (string) $persisted;
@@ -247,8 +247,8 @@ final readonly class OwnershipBoundary implements BoundaryContract
                 $json = json_encode($snapshot->owner->toArray(), JSON_THROW_ON_ERROR);
                 match ($model->getConnection()->getDriverName()) {
                     'pgsql' => $query->whereRaw('owner_reference::jsonb = ?::jsonb', [$json]),
-                    'mysql', 'mariadb' => $query->whereRaw('JSON_CONTAINS(owner_reference, ?) AND JSON_LENGTH(owner_reference) = 5', [$json]),
-                    default => $query->whereRaw('json(owner_reference) = json(?)', [$json]),
+                    'sqlite' => $query->whereRaw('json(owner_reference) = json(?)', [$json]),
+                    default => throw new OwnershipConfigurationInvalid('Unsupported ownership query driver.'),
                 };
             }
         } elseif ($definition->strategy === 'inherited') {
@@ -259,8 +259,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
                 foreach ($types as $type => $parent) {
                     $alternatives->orWhere(function (Builder $branch) use ($type, $parent, $relation, $model, $snapshot, $visited): void {
                         $parentModel = new $parent->model;
-                        $driver = $model->getConnection()->getDriverName();
-                        $parentQuery = $parentModel->newQueryWithoutScopes()->where(new OwnershipTextColumn($parentModel->qualifyColumn($parentModel->getKeyName()), $driver), '=', new OwnershipTextColumn($model->qualifyColumn($relation->getForeignKeyName()), $driver));
+                        $parentQuery = $parentModel->newQueryWithoutScopes()->where(new OwnershipTextColumn($parentModel->qualifyColumn($parentModel->getKeyName())), '=', new OwnershipTextColumn($model->qualifyColumn($relation->getForeignKeyName())));
                         if ($relation instanceof MorphTo) {
                             $branch->where($model->qualifyColumn($relation->getMorphType()), $type);
                         }

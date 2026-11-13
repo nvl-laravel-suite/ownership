@@ -1,7 +1,6 @@
 <?php
 
 declare(strict_types=1);
-use Illuminate\Database\MySqlConnection;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -78,11 +77,8 @@ it('rejects noncanonical raw partition keys independently of SQL padding and reg
     }
 });
 
-it('compares polymorphic references to exact textual native keys', function (string $kind, string $identity, array $forged, bool $nativeForeign): void {
+it('compares polymorphic references to exact textual native keys', function (string $kind, string $identity, array $forged): void {
     $connection = DB::connection();
-    if ($nativeForeign && ! ($connection instanceof MySqlConnection && $connection->isMaria())) {
-        $this->markTestSkipped('This case exercises MariaDB native UUID foreign storage.');
-    }
     $scope = 'owner:'.str_repeat('a', 64);
     $connection->getSchemaBuilder()->create('ownership_native_key_parents', static function (Blueprint $table) use ($kind): void {
         match ($kind) {
@@ -92,49 +88,34 @@ it('compares polymorphic references to exact textual native keys', function (str
         };
         $table->string('owner_scope_key');
     });
-    $connection->getSchemaBuilder()->create('ownership_native_key_children', static function (Blueprint $table) use ($nativeForeign): void {
+    $connection->getSchemaBuilder()->create('ownership_native_key_children', static function (Blueprint $table): void {
         $table->unsignedBigInteger('id')->primary();
         $table->string('subject_type');
-        $nativeForeign ? $table->uuid('subject_id') : $table->string('subject_id');
+        $table->string('subject_id');
         $table->string('owner_scope_key');
     });
     $connection->table('ownership_native_key_parents')->insert(['id' => $identity, 'owner_scope_key' => $scope]);
     $valid = ['subject_type' => 'native-parent', 'subject_id' => $identity, 'owner_scope_key' => $scope];
     $connection->table('ownership_native_key_children')->insert(['id' => 1, ...$valid]);
-    $sources = [$connection];
-    if ($connection instanceof MySqlConnection && $connection->isMaria()) {
-        config()->set('database.connections.native_key_mysql_alias', [...$connection->getConfig(), 'driver' => 'mysql']);
-        $sources[] = DB::connection('native_key_mysql_alias');
-        expect($sources[1]->getDriverName())->toBe('mysql');
+    $constraints = app(OwnershipDatabaseConstraints::class);
+    $constraints->protect($connection, 'ownership_native_key_children', ['owner_scope_key'], false);
+    $constraints->polymorphicReference($connection, 'ownership_native_key_children', 'subject_type', 'subject_id', [
+        ['type' => 'native-parent', 'table' => 'ownership_native_key_parents', 'key' => 'id'],
+    ]);
+    $connection->table('ownership_native_key_children')->insert(['id' => 2, ...$valid]);
+    foreach ($forged as $key) {
+        expect(fn () => $connection->transaction(fn () => $connection->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'subject_id' => $key])))->toThrow(QueryException::class);
+        expect(fn () => $connection->transaction(fn () => $connection->table('ownership_native_key_children')->where('id', 2)->update(['subject_id' => $key])))->toThrow(QueryException::class);
     }
-
-    try {
-        foreach ($sources as $source) {
-            $constraints = app(OwnershipDatabaseConstraints::class);
-            $constraints->protect($source, 'ownership_native_key_children', ['owner_scope_key'], false);
-            $constraints->polymorphicReference($source, 'ownership_native_key_children', 'subject_type', 'subject_id', [
-                ['type' => 'native-parent', 'table' => 'ownership_native_key_parents', 'key' => 'id'],
-            ]);
-            $source->table('ownership_native_key_children')->insert(['id' => 2, ...$valid]);
-            foreach ($forged as $key) {
-                expect(fn () => $source->transaction(fn () => $source->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'subject_id' => $key])))->toThrow(QueryException::class);
-                expect(fn () => $source->transaction(fn () => $source->table('ownership_native_key_children')->where('id', 2)->update(['subject_id' => $key])))->toThrow(QueryException::class);
-            }
-            expect(fn () => $source->transaction(fn () => $source->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'owner_scope_key' => 'owner:'.str_repeat('b', 64)])))->toThrow(QueryException::class);
-            foreach (['forged-parent', 'NATIVE-PARENT', 'native-parent '] as $type) {
-                expect(fn () => $source->transaction(fn () => $source->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'subject_type' => $type])))->toThrow(QueryException::class);
-            }
-            expect($source->table('ownership_native_key_children')->count())->toBe(2);
-            $source->table('ownership_native_key_children')->where('id', 2)->delete();
-        }
-    } finally {
-        DB::purge('native_key_mysql_alias');
+    expect(fn () => $connection->transaction(fn () => $connection->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'owner_scope_key' => 'owner:'.str_repeat('b', 64)])))->toThrow(QueryException::class);
+    foreach (['forged-parent', 'NATIVE-PARENT', 'native-parent '] as $type) {
+        expect(fn () => $connection->transaction(fn () => $connection->table('ownership_native_key_children')->insert(['id' => 3, ...$valid, 'subject_type' => $type])))->toThrow(QueryException::class);
     }
+    expect($connection->table('ownership_native_key_children')->count())->toBe(2);
 })->with([
-    'integer' => ['integer', '7', ['007', '7.0', '7e0', '7 '], false],
-    'string' => ['string', 'CaseOwner', ['caseowner', 'CaseOwner '], false],
-    'uuid' => ['uuid', '12345678-1234-5678-90ab-123456789abc', ['12345678-1234-5678-90AB-123456789ABC', '12345678-1234-5678-90ab-123456789abd'], false],
-    'native uuid foreign' => ['uuid', '12345678-1234-5678-90ab-123456789abc', ['12345678-1234-5678-90ab-123456789abd'], true],
+    'integer' => ['integer', '7', ['007', '7.0', '7e0', '7 ']],
+    'string' => ['string', 'CaseOwner', ['caseowner', 'CaseOwner ']],
+    'uuid' => ['uuid', '12345678-1234-5678-90ab-123456789abc', ['12345678-1234-5678-90AB-123456789ABC', '12345678-1234-5678-90ab-123456789abd']],
 ]);
 
 it('enforces secondary references on raw inserts and updates with native owner partitions', function (): void {

@@ -65,9 +65,7 @@ newly partitioned table without its runtime beyond the request in progress.
 
 ## Requirements and installation
 
-NVL Light requires PHP 8.4 and Laravel 13. Enabled isolation requires Laravel's transaction-committing boundary and fails closed when that capability is unavailable. Native archive consumers passed on PostgreSQL 17 and MySQL 8.4 with Redis and
-private storage, including worker and runtime-removal checks. Complete MariaDB
-and other platform combinations require separate evidence.
+NVL Light requires PHP 8.4 and Laravel 13. Enabled isolation requires Laravel's transaction-committing boundary and fails closed when that capability is unavailable. The supported database engines are SQLite 3 and PostgreSQL 17. The PostgreSQL archive check exercises Redis, private storage, workers, and runtime removal.
 
 ```sh
 composer require nvl/ownership:^7.0 nvl/media:^7.0
@@ -248,13 +246,6 @@ maintenance, graph closure, mapping conservation and activation; the helper cann
 be called independently to manufacture readiness. It refuses nonempty resources
 in every adoption phase; only the coordinator's constraint refresh of the already
 active graph may reapply constraints over existing records.
-MySQL and MariaDB partition columns use `ascii` / `ascii_bin` while retaining
-their 191-character capacity. This preserves full composite indexes without
-prefix uniqueness. Maintenance preparation can convert existing canonical
-columns when no partition foreign key depends on them. A column participating
-in an incoming or outgoing partition foreign key requires a reviewed migration
-that preserves the complete graph. Readiness checks continue to accept already
-protected UTF8 storage.
 
 Updating PHP constraint generators does not rewrite installed database triggers.
 To refresh an already active graph, drain workers and requests, enter maintenance,
@@ -477,8 +468,8 @@ the deployment's actual database and queue transports.
 
 ## Verified public owner sites
 
-Public packages use `OwnerSiteResolver`, `PublicOwnerSiteRunner` and
-`ResolvePublicOwnerSite` with Core's immutable `VerifiedOwnerSiteContext`.
+Public packages use `OwnerSiteResolver` and `PublicOwnerSiteRunner` with Core's
+immutable `VerifiedOwnerSiteContext`.
 Bind a host resolver backed by enabled persisted origin mappings; unknown sites
 fail closed. Only the resolved full native owner, exact canonical request origin,
 site and declared resource graph are admitted. `resources` is a nonempty list of
@@ -486,8 +477,8 @@ read capabilities and `writableResources` is its explicit write subset. Locale,
 content scope and site remain distinct from the owner reference. Public requests
 cannot mint actor, system, central, catalog-management or queued authority.
 
-Outside HTTP, use `PublicOwnerSiteRunner::run(Request::create($canonicalOrigin),
-$callback)` to revalidate the same mapping. State restores on normal return and
+Outside HTTP, use `PublicOwnerSiteRunner::run($canonicalOrigin, $callback)` to
+revalidate the same mapping. State restores on normal return and
 failure; nested public work must keep exactly the same verified site/capabilities.
 Public Form callbacks revalidate that identity and generation after native commit.
 Use separately authorized system workflows for durable background work.

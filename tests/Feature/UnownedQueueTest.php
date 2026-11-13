@@ -9,19 +9,21 @@ use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\UnownedProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    $this->installColumnScenario();
 });
 
 it('runs explicitly unowned work with no actor owner or central authority in an owned deployment', function (): void {
@@ -50,8 +52,13 @@ it('requires the explicit unowned wire version and rejects authority promotion a
     expect(fn () => OwnershipJobEnvelope::fromArray([...$wire, 'principal' => ['kind' => 'actor', 'type' => Actor::class, 'id' => '1']]))->toThrow(OwnershipViolation::class);
     $wire['generations'] = [];
     expect(fn () => $queue->run(OwnershipJobEnvelope::fromArray($wire), static fn () => 'unsafe'))->toThrow(OwnershipSchemaNotReady::class);
-    config(['nvl-ownership.enabled' => false]);
-    expect(fn () => $queue->captureUnowned())->toThrow(OwnershipViolation::class);
+    $enabled = config('nvl-ownership.enabled');
+    try {
+        config(['nvl-ownership.enabled' => false]);
+        expect(fn () => $queue->captureUnowned())->toThrow(OwnershipViolation::class);
+    } finally {
+        config(['nvl-ownership.enabled' => $enabled]);
+    }
 });
 
 it('retains source transaction fencing when unowned work is dispatched from an admitted owner', function (): void {
@@ -78,7 +85,7 @@ it('captures unowned native batch callbacks without allowing a batch to mix owne
     expect($stored->totalJobs)->toBe(1)->and(DB::table('jobs')->count())->toBe(1);
     $owned = app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), fn () => new UnownedProbeJob(OwnershipJobEnvelope::capture(app(OwnershipContext::class))));
     expect(fn () => $queue->captureBatch(Bus::batch([new UnownedProbeJob($envelope), $owned])))->toThrow(OwnershipViolation::class);
-});
+})->group('fresh-adoption');
 
 it('exposes explicit unowned execution through the injected runner contract and restores owner authority', function (): void {
     expect((new ReflectionClass(RunnerContract::class))->hasMethod('unowned'))->toBeTrue();

@@ -7,7 +7,7 @@ Light requires PHP 8.4 and Laravel 13. Replace retired package Actions, transpor
 Upgrade the selected family together. Preserve stored identities, migration ownership, source connections, queue state and operation recovery journals. Review and apply the relevant storage/adoption procedure before accepting writes; installing new code alone does not migrate existing data.
 
 The 7.x guard corrections enforce exact partition and morph keys,
-immutable scalar bytes, and MariaDB native UUID text identities. Existing stored
+and immutable scalar bytes. Existing stored
 triggers need the explicit `OwnershipAdoptionCoordinator::refreshConstraints()`
 procedure in [README.md](README.md), under authorized maintenance and the original
 active plan. Use a reviewed nontransactional host migration and the dedicated

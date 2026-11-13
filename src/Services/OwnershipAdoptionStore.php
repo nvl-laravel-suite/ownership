@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Nvl\Ownership\Services;
 
-use Closure;
 use Illuminate\Container\Container;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Contracts\OwnershipAdoptionMetadataValidator;
@@ -33,6 +33,8 @@ use Nvl\Support\Ownership\ValueObjects\OwnerReference;
  */
 final readonly class OwnershipAdoptionStore
 {
+    private const int SourceKeyBatchSize = 200;
+
     /** Resolve canonical storage and fresh native owner admission. */
     public function __construct(private OwnershipConnections $connections, private Container $container, private OwnershipAdoptionScope $scope) {}
 
@@ -121,32 +123,93 @@ final readonly class OwnershipAdoptionStore
      */
     public function mappingHash(string $runId, array $graph): string
     {
-        return $this->hashMappings($runId, fn (OwnershipMapping $assignment): string => $this->validateAssignment($runId, $assignment, $graph));
+        return $this->hashMappings($runId, $graph);
     }
 
     /** Verify sealed mapping bytes without reauthorizing historical assignments or source inventory. */
     public function immutableMappingHash(string $runId): string
     {
-        return $this->hashMappings($runId, fn (OwnershipMapping $assignment): string => $this->metadataBytes($assignment));
+        return $this->hashMappings($runId);
     }
 
-    /** @param Closure(OwnershipMapping): string $metadata */
-    private function hashMappings(string $runId, Closure $metadata): string
+    /** @param  Graph|null  $graph */
+    private function hashMappings(string $runId, ?array $graph = null): string
     {
         $connection = $this->connections->core();
         $ordering = match ($connection->getDriverName()) {
-            'mysql', 'mariadb' => 'BINARY resource, BINARY record_id',
             'pgsql' => 'resource COLLATE "C", record_id COLLATE "C"',
             default => 'resource COLLATE BINARY, record_id COLLATE BINARY',
         };
+        $assignments = $connection->table(Tables::Mappings)->where('run_id', $runId)->orderByRaw($ordering)->cursor()
+            ->map($this->decodeMapping(...));
+        $canBatch = $graph !== null && ! array_any($graph['adapters'], static fn (object $adapter): bool => $adapter instanceof OwnershipAdoptionMetadataValidator || $adapter instanceof OwnershipAdoptionSource);
+        $chunks = $canBatch
+            ? $assignments->chunk(self::SourceKeyBatchSize)->map(static fn (LazyCollection $chunk): array => $chunk->all())
+            : $assignments->map(static fn (OwnershipMapping $assignment): array => [$assignment]);
+        $ownerStores = null;
         $hash = hash_init('sha256');
-        foreach ($connection->table(Tables::Mappings)->where('run_id', $runId)->orderByRaw($ordering)->cursor() as $row) {
-            $assignment = $this->decodeMapping($row);
-            $canonical = $metadata($assignment);
-            hash_update($hash, json_encode([$assignment->resource, $assignment->recordId, $assignment->owner?->toArray(), $canonical, $assignment->legacyTenantId], JSON_THROW_ON_ERROR)."\n");
+        foreach ($chunks as $chunk) {
+            $sourceKeys = null;
+            if ($graph !== null && $canBatch && $this->canBatchSourceKeys($chunk)) {
+                $sourceKeys = $this->sourceKeys($chunk, $graph);
+                $ownerStores ??= [];
+            } else {
+                $ownerStores = null;
+            }
+            foreach ($chunk as $assignment) {
+                $canonical = $graph === null
+                    ? $this->metadataBytes($assignment)
+                    : $this->validateAssignment($runId, $assignment, $graph, $sourceKeys, $ownerStores);
+                hash_update($hash, json_encode([$assignment->resource, $assignment->recordId, $assignment->owner?->toArray(), $canonical, $assignment->legacyTenantId], JSON_THROW_ON_ERROR)."\n");
+            }
         }
 
         return hash_final($hash);
+    }
+
+    /**
+     * Custom owner policies observe each assignment before the next source read.
+     *
+     * @param  array<OwnershipMapping>  $assignments
+     */
+    private function canBatchSourceKeys(array $assignments): bool
+    {
+        return ! array_any($assignments, static fn (OwnershipMapping $assignment): bool => $assignment->owner !== null)
+            || $this->container->get(OwnerAvailability::class) instanceof ExistingOwnerAvailability;
+    }
+
+    /**
+     * Read exact physical keys from the writer for one bounded set of native mappings.
+     *
+     * @param  iterable<OwnershipMapping>  $assignments
+     * @param  Graph  $graph
+     * @return array<string, array<int|string, true>>
+     */
+    private function sourceKeys(iterable $assignments, array $graph): array
+    {
+        $requested = [];
+        foreach ($assignments as $assignment) {
+            $this->assertIdentifiers($assignment);
+            if (! isset($graph['owners'][$assignment->resource])) {
+                throw new OwnershipConfigurationInvalid('A mapping names a resource outside the selected graph.');
+            }
+            $requested[$assignment->resource][] = $assignment->recordId;
+        }
+        $found = [];
+        $registry = $this->container->make(OwnershipResourceRegistry::class);
+        foreach ($requested as $resource => $recordIds) {
+            $definition = $registry->get($resource);
+            $source = new $definition->model;
+            $key = $source->getKeyName();
+            $values = $source->getConnection()->table($source->getTable())->useWritePdo()->whereIn($key, $recordIds)->pluck($key);
+            foreach ($values as $value) {
+                if (is_int($value) || is_string($value)) {
+                    $found[$resource][(string) $value] = true;
+                }
+            }
+        }
+
+        return $found;
     }
 
     /**
@@ -210,16 +273,13 @@ final readonly class OwnershipAdoptionStore
      * Validate physical bounds, owner availability, and the owning package's optional schema.
      *
      * @param  Graph  $graph
+     * @param  array<string, array<int|string, true>>|null  $sourceKeys
+     * @param  array<int, string|null>|null  $ownerStores
      */
-    private function validateAssignment(string $runId, OwnershipMapping $assignment, array $graph): string
+    private function validateAssignment(string $runId, OwnershipMapping $assignment, array $graph, ?array $sourceKeys = null, ?array &$ownerStores = null): string
     {
-        foreach ([$assignment->resource, $assignment->recordId] as $value) {
-            if (trim($value) === '' || mb_strlen($value) > 191 || str_contains($value, "\0")) {
-                throw new OwnershipConfigurationInvalid('Mapping identifiers require 1 to 191 characters.');
-            }
-        }
-        if ($assignment->legacyTenantId !== null && ! Str::isUuid($assignment->legacyTenantId)) {
-            throw new OwnershipConfigurationInvalid('Legacy tenant references require their original canonical UUID.');
+        if ($sourceKeys === null) {
+            $this->assertIdentifiers($assignment);
         }
         $owner = $graph['owners'][$assignment->resource] ?? throw new OwnershipConfigurationInvalid('A mapping names a resource outside the selected graph.');
         $definition = $this->container->make(OwnershipResourceRegistry::class)->get($assignment->resource);
@@ -229,20 +289,26 @@ final readonly class OwnershipAdoptionStore
                 throw new OwnershipConfigurationInvalid('Central disposition requires an explicitly central-capable resource and no legacy tenant.');
             }
         } else {
-            $native = $this->container->make(OwnerIdentityResolver::class)->resolve($assignment->owner);
+            $resolver = $this->container->make(OwnerIdentityResolver::class);
+            $native = $ownerStores === null ? $resolver->resolve($assignment->owner) : $resolver->resolveWithStoreIdentities($assignment->owner, $ownerStores);
             $this->container->make(OwnerAvailability::class)->assertAvailable($native);
         }
         $adapter = $graph['adapters'][$owner];
-        $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($assignment->resource) : new $definition->model;
-        $persistedKey = $source->getConnection()->table($source->getTable())->useWritePdo()->where($source->getKeyName(), $assignment->recordId)->value($source->getKeyName());
-        if ((! is_int($persistedKey) && ! is_string($persistedKey)) || (string) $persistedKey !== $assignment->recordId) {
+        if ($sourceKeys === null) {
+            $source = $adapter instanceof OwnershipAdoptionSource ? $adapter->sourceFor($assignment->resource) : new $definition->model;
+            $key = $source->getKeyName();
+            $persistedKey = $source->getConnection()->table($source->getTable())->useWritePdo()->where($key, $assignment->recordId)->value($key);
+            $exists = (is_int($persistedKey) || is_string($persistedKey)) && (string) $persistedKey === $assignment->recordId;
+        } else {
+            $exists = isset($sourceKeys[$assignment->resource][$assignment->recordId]);
+        }
+        if (! $exists) {
             throw new OwnershipConfigurationInvalid('A mapping must name the exact existing physical source record.');
         }
         if ($assignment->owner !== null && $definition->ownership->owner !== null && $native::class !== $this->container->make(OwnerRegistry::class)->model($definition->ownership->owner)) {
             throw new OwnershipViolation('The mapping owner differs from the declared concrete owner.');
         }
         $canonical = $this->metadataBytes($assignment);
-        $adapter = $graph['adapters'][$owner];
         if ($adapter instanceof OwnershipAdoptionMetadataValidator) {
             $this->scope->during($runId, $adapter::class, 'metadata', fn () => $adapter->validateAssignment($assignment));
         } elseif ($assignment->metadata !== []) {
@@ -250,6 +316,18 @@ final readonly class OwnershipAdoptionStore
         }
 
         return $canonical;
+    }
+
+    private function assertIdentifiers(OwnershipMapping $assignment): void
+    {
+        foreach ([$assignment->resource, $assignment->recordId] as $value) {
+            if (trim($value) === '' || mb_strlen($value) > 191 || str_contains($value, "\0")) {
+                throw new OwnershipConfigurationInvalid('Mapping identifiers require 1 to 191 characters.');
+            }
+        }
+        if ($assignment->legacyTenantId !== null && ! Str::isUuid($assignment->legacyTenantId)) {
+            throw new OwnershipConfigurationInvalid('Legacy tenant references require their original canonical UUID.');
+        }
     }
 
     /** Canonicalize immutable metadata bytes without granting current assignment authority. */

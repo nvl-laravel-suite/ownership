@@ -15,13 +15,13 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 /** Builds real enforced storage through the adoption protocol in every resource test. */
 final readonly class AssetsAdapter implements OwnershipAdoptionAdapter
 {
-    /** Resolve package metadata and the explicitly scoped input store. */
-    public function __construct(private OwnershipResourceRegistry $resources, private OwnershipAdoptionStore $mappings) {}
+    /** @param list<string> $resourceKeys The exact graph declared by the scenario. */
+    public function __construct(private OwnershipResourceRegistry $resources, private OwnershipAdoptionStore $mappings, private array $resourceKeys) {}
 
     /** @return list<string> */
     public function resources(): array
     {
-        return ['assets.column', 'assets.pivot', 'assets.captured', 'assets.child', 'assets.string', 'assets.string-key', 'assets.poly'];
+        return $this->resourceKeys;
     }
 
     /** Add only the shared partition structures; native owner schemas remain host-owned. */

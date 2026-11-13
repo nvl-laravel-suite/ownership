@@ -8,12 +8,14 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Nvl\Ownership\Contracts\OwnerAccess;
 use Nvl\Ownership\Contracts\OwnerAvailability;
 use Nvl\Ownership\Providers\OwnershipServiceProvider;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
+use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
+use Nvl\Ownership\Tests\Fixtures\ReusesAdoptedSchema;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Providers\SupportServiceProvider;
 use Orchestra\Testbench\TestCase;
@@ -21,6 +23,8 @@ use Orchestra\Testbench\TestCase;
 /** Boots only the neutral Core and optional Ownership runtime against native host keys. */
 abstract class OwnershipTestCase extends TestCase
 {
+    use ReusesAdoptedSchema;
+
     /** @return list<class-string> */
     protected function getPackageProviders($app): array
     {
@@ -46,7 +50,7 @@ abstract class OwnershipTestCase extends TestCase
         if ($driver === false || $driver === 'sqlite') {
             return;
         }
-        if (! in_array($driver, ['pgsql', 'mysql', 'mariadb'], true)) {
+        if ($driver !== 'pgsql') {
             throw new \RuntimeException('Unknown dedicated ownership test driver.');
         }
         $primary = getenv('NVL_OWNERSHIP_TEST_DATABASE');
@@ -59,16 +63,7 @@ abstract class OwnershipTestCase extends TestCase
         if ($primary === $remote) {
             throw new \RuntimeException('Persistence tests require distinct primary and remote databases.');
         }
-        if ($driver === 'pgsql') {
-            $connection = ['driver' => 'pgsql', 'host' => getenv('NVL_OWNERSHIP_TEST_HOST') ?: '/tmp', 'port' => getenv('NVL_OWNERSHIP_TEST_PORT') ?: '5432', 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: get_current_user(), 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
-        } else {
-            $host = getenv('NVL_OWNERSHIP_TEST_HOST') ?: '127.0.0.1';
-            $port = getenv('NVL_OWNERSHIP_TEST_PORT');
-            if (! in_array($host, ['127.0.0.1', 'localhost', '::1'], true) || ! is_string($port) || ! ctype_digit($port) || (int) $port < 1 || (int) $port > 65535) {
-                throw new \RuntimeException('MySQL/MariaDB persistence tests require an explicit loopback host and test port.');
-            }
-            $connection = ['driver' => $driver, 'host' => $host, 'port' => $port, 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: 'root', 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_bin', 'prefix' => '', 'prefix_indexes' => true, 'strict' => true, 'engine' => 'InnoDB', 'timezone' => '+00:00'];
-        }
+        $connection = ['driver' => 'pgsql', 'host' => getenv('NVL_OWNERSHIP_TEST_HOST') ?: '/tmp', 'port' => getenv('NVL_OWNERSHIP_TEST_PORT') ?: '5432', 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: get_current_user(), 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
         $app['config']->set('database.connections.sqlite', ['url' => null, ...$connection]);
         $app['config']->set('database.connections.ownership_remote', ['url' => null, ...$connection, 'database' => $remote]);
     }
@@ -77,23 +72,71 @@ abstract class OwnershipTestCase extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        if (in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
-            $this->assertSame(getenv('NVL_OWNERSHIP_TEST_DRIVER'), DB::connection()->getDriverName());
-            foreach (['sqlite', 'ownership_remote'] as $connection) {
-                DB::connection($connection)->getSchemaBuilder()->dropAllTables();
-            }
+        $this->startAdoptedSchema($this->mayReuseAdoptedSchema());
+        if (! $this->hasRetainedOwnershipSchema()) {
+            $this->createOwnershipFixtureTables();
         }
-        Schema::create('ownership_test_companies', static function (Blueprint $table): void {
-            $table->unsignedBigInteger('id')->primary();
-            $table->boolean('active')->default(true);
-        });
-        Schema::create('ownership_test_actors', static function (Blueprint $table): void {
-            $table->unsignedBigInteger('id')->primary();
-            $table->string('name');
-        });
+
         Company::query()->create(['id' => 7]);
         Company::query()->create(['id' => 8]);
         Actor::query()->create(['id' => 1, 'name' => 'Operator']);
+    }
+
+    /** Opt in only for tests with a single-source adoption fixture and a known row baseline. */
+    protected function mayReuseAdoptedSchema(): bool
+    {
+        return false;
+    }
+
+    protected function installResourceScenario(bool $queue = false): void
+    {
+        $reused = $this->hasRetainedOwnershipSchema();
+        ResourceScenario::install($this->app, $reused);
+        if ($queue) {
+            QueueScenario::install($reused);
+        }
+        $this->retainAdoptedOwnershipSchema(ResourceScenario::SeedTables);
+    }
+
+    protected function installColumnScenario(bool $withPivot = false, bool $queue = false): void
+    {
+        $reused = $this->hasRetainedOwnershipSchema();
+        if ($withPivot) {
+            ResourceScenario::installColumnAndPivot($this->app, $reused);
+        } else {
+            ResourceScenario::installColumn($this->app, $reused);
+        }
+        if ($queue) {
+            QueueScenario::install($reused);
+        }
+        $this->retainAdoptedOwnershipSchema($withPivot ? ResourceScenario::ColumnAndPivotSeedTables : ResourceScenario::ColumnSeedTables);
+    }
+
+    /** @param list<string> $resources */
+    protected function installNativeRootScenario(array $resources): void
+    {
+        $seedTables = ResourceScenario::installNativeRoots($this->app, $resources, $this->hasRetainedOwnershipSchema());
+        $this->retainAdoptedOwnershipSchema($seedTables);
+    }
+
+    private function createOwnershipFixtureTables(): void
+    {
+        $source = DB::connection();
+        $schema = $source->getSchemaBuilder();
+        $native = getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql';
+        if ($native) {
+            $this->assertSame(getenv('NVL_OWNERSHIP_TEST_DRIVER'), $source->getDriverName());
+            $schema->dropAllTables();
+            DB::connection('ownership_remote')->getSchemaBuilder()->dropAllTables();
+        }
+        $schema->create('ownership_test_companies', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('id')->primary();
+            $table->boolean('active')->default(true);
+        });
+        $schema->create('ownership_test_actors', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('id')->primary();
+            $table->string('name');
+        });
     }
 
     /**

@@ -37,6 +37,8 @@ use PDO;
  */
 final readonly class OwnershipAdoptionCoordinator
 {
+    private const int MarkerReadBatchSize = 200;
+
     /** Create the stable write boundary for adoption runs and installation markers. */
     public function __construct(
         private Container $container,
@@ -304,11 +306,16 @@ final readonly class OwnershipAdoptionCoordinator
         }
         $stores = $configuration['stores'];
         $coordinator = $this->connections->core();
+        $sources = [];
         foreach ($graph['resources'] as $resource) {
-            $connection = $this->connections->resource($resource);
+            $sources[$resource] = $this->connections->resource($resource);
+        }
+        $markers = $this->readSourceMarkers($sources);
+        foreach ($graph['resources'] as $resource) {
+            $connection = $sources[$resource];
             $definition = $this->container->make(OwnershipResourceRegistry::class)->get($resource);
             $table = (new $definition->model)->getTable();
-            $marker = $connection->table(Tables::Markers)->useWritePdo()->where('resource', $resource)->first();
+            $marker = $markers[$resource] ?? null;
             if ($marker === null && ! $run['checkpoints']['adapters'][$graph['owners'][$resource]]['prepared']) {
                 continue;
             }
@@ -323,6 +330,34 @@ final readonly class OwnershipAdoptionCoordinator
         }
 
         return [$run, $graph];
+    }
+
+    /**
+     * Load fresh markers for the selected resources on each actual write connection.
+     *
+     * @param  array<string, Connection>  $sources
+     * @return array<string, \stdClass>
+     */
+    private function readSourceMarkers(array $sources): array
+    {
+        $resourcesByConnection = [];
+        foreach ($sources as $resource => $connection) {
+            $resourcesByConnection[spl_object_id($connection)][] = $resource;
+        }
+        $markers = [];
+        foreach ($resourcesByConnection as $resources) {
+            $connection = $sources[$resources[0]];
+            foreach (array_chunk($resources, self::MarkerReadBatchSize) as $batch) {
+                foreach ($connection->table(Tables::Markers)->useWritePdo()->whereIn('resource', $batch)->get() as $marker) {
+                    if (! is_string($marker->resource) || ! in_array($marker->resource, $batch, true)) {
+                        throw new OwnershipSchemaNotReady('The source generation changed during adoption.');
+                    }
+                    $markers[$marker->resource] = $marker;
+                }
+            }
+        }
+
+        return $markers;
     }
 
     /** @param Run $run */

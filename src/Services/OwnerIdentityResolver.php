@@ -32,6 +32,19 @@ final readonly class OwnerIdentityResolver
     public function resolve(OwnerReference $reference): Model
     {
         $identities = [];
+
+        return $this->resolveWithStoreIdentities($reference, $identities);
+    }
+
+    /**
+     * Reload the owner while sharing store identity reads within a single adoption validation pass.
+     *
+     * @internal
+     *
+     * @param  array<int, string|null>  $identities
+     */
+    public function resolveWithStoreIdentities(OwnerReference $reference, array &$identities): Model
+    {
         $class = $this->owners->model($reference->type);
         $canonical = new $class;
         if ($this->owners->aliasFor($canonical) !== $reference->type

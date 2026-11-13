@@ -20,7 +20,7 @@ use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Symfony\Component\Process\Process;
 
 it('runs explicit global jobs and native batch callbacks in a separate worker without owned restoration', function (): void {
-    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
         $this->markTestSkipped('Requires the explicitly dedicated native worker source.');
     }
     $this->allowOwners();

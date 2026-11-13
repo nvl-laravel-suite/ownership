@@ -12,7 +12,7 @@ use Orchestra\Testbench\Foundation\Application as TestbenchApplication;
 require dirname(__DIR__, 6).'/vendor/autoload.php';
 
 $connection = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
-if (! is_array($connection) || ! in_array($connection['driver'] ?? null, ['pgsql', 'mysql', 'mariadb'], true)
+if (! is_array($connection) || ($connection['driver'] ?? null) !== 'pgsql'
     || ! is_string($connection['database'] ?? null) || preg_match('/^nvl_own_test_[a-z0-9_]+$/D', $connection['database']) !== 1) {
     throw new RuntimeException('The worker requires an explicitly dedicated native persistence source.');
 }

@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
@@ -25,9 +26,15 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\BufferedOutput;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
+    if (in_array('queue-input-only', $this->groups(), true)) {
+        return;
+    }
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    ResourceScenario::installColumn($this->app, $this->hasRetainedOwnershipSchema());
+    $this->retainAdoptedOwnershipSchema(ResourceScenario::ColumnSeedTables);
     ProbeJob::$observations = [];
 });
 
@@ -94,7 +101,7 @@ it('raw retries ordinary captured failures without eager native model restoratio
     expect(ProbeJob::$observations)->toBe([]);
     expect(Artisan::call('nvl:queue:retry', ['id' => [$id]]))->toBe(0);
     expect(ProbeJob::$observations)->toBe([])->and(DB::table('jobs')->value('payload'))->toBe($payload);
-});
+})->group('fresh-adoption');
 
 /** Observes every native restoration entry without implementing the new ownership protocol. */
 final class RetiredOwnershipHostJob implements ShouldQueue
@@ -149,7 +156,7 @@ it('quarantines retired-only authority on enabled workers retaining a native hos
         ->and(DB::table('failed_jobs')->count())->toBe(1)
         ->and(DB::table('failed_jobs')->value('payload'))->toBe($raw)
         ->and(DB::table('failed_jobs')->value('exception'))->toContain('NVL queue envelope rejected:');
-})->with(['normal worker' => false, 'terminal worker' => true]);
+})->with(['normal worker' => false, 'terminal worker' => true])->group('fresh-adoption');
 
 it('rejects malformed raw retry identifiers before changing failed-job storage', function (mixed $ids): void {
     $input = Mockery::mock(InputInterface::class);
@@ -162,4 +169,5 @@ it('rejects malformed raw retry identifiers before changing failed-job storage',
 
     expect(app()->call([$command, 'handle']))->toBe(1)
         ->and($output->fetch())->toContain('Native failed-job IDs must be a nonempty list of strings.');
-})->with(['scalar' => ['not-a-list'], 'empty list' => [[]], 'invalid entry' => [[new stdClass]]]);
+})->with(['scalar' => ['not-a-list'], 'empty list' => [[]], 'invalid entry' => [[new stdClass]]])
+    ->group('queue-input-only', 'fresh-adoption');

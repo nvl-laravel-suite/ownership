@@ -9,6 +9,8 @@ use Nvl\Ownership\Contracts\OwnershipAdoptionAdapter;
 use Nvl\Ownership\ValueObjects\OwnershipAdoptionPlan;
 use Nvl\Ownership\ValueObjects\OwnershipBackfillResult;
 use Nvl\Ownership\ValueObjects\OwnershipVerification;
+use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
+use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
 /** Exercises real coordinator fences on an empty, already prepared native schema. */
 class LargeGraphAdapter implements OwnershipAdoptionAdapter
@@ -20,7 +22,12 @@ class LargeGraphAdapter implements OwnershipAdoptionAdapter
     /** @return list<string> */
     public function resources(): array
     {
-        return LargeGraphFixture::resources($this->group);
+        $family = 'scale-'.$this->group;
+
+        return array_keys(array_filter(
+            app(OwnershipResourceRegistry::class)->all(),
+            static fn (OwnershipResourceDefinition $resource): bool => $resource->family === $family,
+        ));
     }
 
     /** Keep callback effects observable without adding package-specific DDL overhead. */

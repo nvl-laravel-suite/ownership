@@ -38,7 +38,8 @@ final readonly class PublicOwnerSiteRunner
         $snapshot = $this->container->make(OwnershipContext::class)->snapshot();
         if ($snapshot->publicSite !== null) {
             $this->container->make(OwnershipInstallationState::class)->assertSnapshot($snapshot);
-            if ($snapshot->publicSite != $site) {
+            if ([$snapshot->publicSite->owner->toArray(), $snapshot->publicSite->site, $snapshot->publicSite->canonicalOrigin, $snapshot->publicSite->resources, $snapshot->publicSite->writableResources]
+                !== [$site->owner->toArray(), $site->site, $site->canonicalOrigin, $site->resources, $site->writableResources]) {
                 throw new OwnershipViolation('Public admission cannot switch sites or capabilities.');
             }
 

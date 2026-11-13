@@ -15,18 +15,19 @@ use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Queue\ProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\UniqueJob;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
-    QueueScenario::install();
+    $this->installColumnScenario(queue: true);
     ProbeJob::$observations = [];
 });
 

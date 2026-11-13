@@ -52,6 +52,9 @@ final readonly class OwnershipConnections
     /** Read one fresh optional identity, distinguishing absence from corrupt installed storage. */
     public function optionalIdentity(Connection $connection): ?string
     {
+        if (! in_array($connection->getDriverName(), ['sqlite', 'pgsql'], true)) {
+            throw new OwnershipSchemaNotReady('Native ownership requires SQLite or PostgreSQL.');
+        }
         if (! $connection->getSchemaBuilder()->hasTable(Tables::Stores)) {
             return null;
         }

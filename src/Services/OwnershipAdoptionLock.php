@@ -83,20 +83,6 @@ final class OwnershipAdoptionLock
                 $pdo->query('SELECT pg_advisory_unlock(1853254709, 1)');
             };
         }
-        if ($driver === 'mysql' || $driver === 'mariadb') {
-            $database = $pdo->query('SELECT DATABASE()');
-            $name = 'nvl:adoption:'.substr(hash('sha256', (string) ($database === false ? '' : $database->fetchColumn())), 0, 48);
-            $statement = $pdo->prepare('SELECT GET_LOCK(?, 0)');
-            $statement->execute([$name]);
-            if ((int) $statement->fetchColumn() !== 1) {
-                throw new OwnershipViolation('Another adoption operation holds the connection lock.');
-            }
-
-            return static function () use ($pdo, $name): void {
-                $statement = $pdo->prepare('SELECT RELEASE_LOCK(?)');
-                $statement->execute([$name]);
-            };
-        }
         if ($driver !== 'sqlite') {
             throw new OwnershipConfigurationInvalid('This database driver has no supported adoption serialization lock.');
         }

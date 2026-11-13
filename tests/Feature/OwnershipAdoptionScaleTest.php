@@ -28,7 +28,10 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/ownership/2026_10_18_000001_nvl_ownership_create_adoption_tables.php')->up();
     DB::table(Tables::Stores)->where('id', 1)->update(['store_id' => '550e8400-e29b-41d4-a716-446655440000']);
-    LargeGraphFixture::register();
+    $groups = $this->groups();
+    $metadata = in_array('metadata-only', $groups, true);
+    $callbackDrift = in_array('adapter-callback-drift', $groups, true);
+    LargeGraphFixture::register($metadata || $callbackDrift ? 2 : LargeGraphFixture::ResourceCount, withAdapters: ! $metadata);
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
     {
         public function authorize(OwnershipOperation $operation): void {}
@@ -55,24 +58,35 @@ beforeEach(function (): void {
     LargeGraphAdapter::$prepared = 0;
 });
 
-it('bounds preparation metadata work for 154 empty resources and nine adapters', function (): void {
+it('completes every empty adoption phase and bounds metadata reconstruction on active reads', function (): void {
     $coordinator = app(OwnershipAdoptionCoordinator::class);
     $queries = 0;
     $stores = 0;
+    $markers = 0;
     $sqlMilliseconds = 0.0;
-    DB::listen(static function (QueryExecuted $query) use (&$queries, &$stores, &$sqlMilliseconds): void {
+    $measuringPreparation = true;
+    DB::listen(static function (QueryExecuted $query) use (&$queries, &$stores, &$markers, &$sqlMilliseconds, &$measuringPreparation): void {
+        if (! $measuringPreparation) {
+            return;
+        }
+
         $queries++;
         $sqlMilliseconds += (float) $query->time;
         if (str_contains($query->sql, Tables::Stores) && str_starts_with(strtolower($query->sql), 'select')) {
             $stores++;
         }
+        if (str_contains($query->sql, Tables::Markers) && str_starts_with(strtolower($query->sql), 'select')) {
+            $markers++;
+        }
     });
     $started = hrtime(true);
     $plan = $coordinator->prepare(LargeGraphFixture::packages(), [], $this->operation);
+    $measuringPreparation = false;
     $metrics = [
         'phase' => 'prepare', 'resources' => LargeGraphFixture::ResourceCount, 'adapters' => LargeGraphFixture::AdapterCount,
         'elapsed_ms' => (hrtime(true) - $started) / 1_000_000, 'queries' => $queries,
         'store_identity_reads' => $stores, 'sql_ms' => $sqlMilliseconds,
+        'marker_reads' => $markers,
         'owner_constructions' => LargeGraphOwner::$constructions, 'resource_constructions' => LargeGraphRecord::$constructions,
         'configuration_hash' => $plan->configurationHash,
     ];
@@ -85,8 +99,24 @@ it('bounds preparation metadata work for 154 empty resources and nine adapters',
         ->and($plan->configurationHash)->toBe('9709ede891cd616c3f70fb99fa74a75f9b1ac11f43d5b9aafbc4e0b99fe2e0d4')
         ->and(LargeGraphOwner::$constructions)->toBeLessThanOrEqual(128)
         ->and($stores)->toBeLessThanOrEqual(64)
+        ->and($markers)->toBeLessThanOrEqual(400)
         ->and(DB::table(Tables::Markers)->where('generation', $plan->id)->count())->toBe(154)
         ->and(DB::table(Tables::Mappings)->where('run_id', $plan->id)->count())->toBe(0);
+
+    expect($coordinator->backfill($plan, 100, $this->operation))->toBeTrue()
+        ->and($coordinator->verify($plan)->passed())->toBeTrue();
+    $coordinator->activate($plan, $this->operation);
+    LargeGraphOwner::$constructions = 0;
+    LargeGraphRecord::$constructions = 0;
+
+    expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
+        ->and(LargeGraphOwner::$constructions)->toBeLessThanOrEqual(16)
+        ->and(LargeGraphRecord::$constructions)->toBeLessThanOrEqual(154)
+        ->and(DB::table(Tables::Runs)->where('id', $plan->id)->value('status'))->toBe('active');
+
+    LargeGraphRecord::$constructions = 0;
+    expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
+        ->and(LargeGraphRecord::$constructions)->toBe(0);
 });
 
 it('bounds physical store reads while reviewing the empty native graph', function (): void {
@@ -106,25 +136,6 @@ it('bounds physical store reads while reviewing the empty native graph', functio
     } finally {
         unlink($path);
     }
-});
-
-it('completes every empty adoption phase and bounds metadata reconstruction on active reads', function (): void {
-    $coordinator = app(OwnershipAdoptionCoordinator::class);
-    $plan = $coordinator->prepare(LargeGraphFixture::packages(), [], $this->operation);
-    expect($coordinator->backfill($plan, 100, $this->operation))->toBeTrue()
-        ->and($coordinator->verify($plan)->passed())->toBeTrue();
-    $coordinator->activate($plan, $this->operation);
-    LargeGraphOwner::$constructions = 0;
-    LargeGraphRecord::$constructions = 0;
-
-    expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
-        ->and(LargeGraphOwner::$constructions)->toBeLessThanOrEqual(16)
-        ->and(LargeGraphRecord::$constructions)->toBeLessThanOrEqual(154)
-        ->and(DB::table(Tables::Runs)->where('id', $plan->id)->value('status'))->toBe('active');
-
-    LargeGraphRecord::$constructions = 0;
-    expect(app(OwnershipInstallationState::class)->generations())->toHaveCount(154)
-        ->and(LargeGraphRecord::$constructions)->toBe(0);
 });
 
 it('resolves chained owner replacements canonically before sharing their metadata', function (): void {
@@ -148,7 +159,7 @@ it('resolves chained owner replacements canonically before sharing their metadat
     } finally {
         Relation::morphMap($previous, false);
     }
-});
+})->group('metadata-only');
 
 it('rehashes a retained canonical resource model after its configured storage changes', function (): void {
     $model = LargeGraphFixture::configuredRecord();
@@ -169,7 +180,7 @@ it('rehashes a retained canonical resource model after its configured storage ch
     $replaced = new OwnershipResourceDefinition('configured.record', 'configured', LargeGraphRecord::class, $resource->ownership);
     expect(app(OwnershipCanonicalModels::class)->for($replaced))->not->toBe($retained)
         ->and(app(OwnershipCanonicalModels::class)->for($replaced)::class)->toBe(LargeGraphRecord::class);
-});
+})->group('metadata-only');
 
 it('rebuilds configuration and marker facts after an adapter callback', function (string $drift, string $exception): void {
     $previous = Relation::morphMap();
@@ -185,14 +196,14 @@ it('rebuilds configuration and marker facts after an adapter callback', function
         }
     }]);
     try {
-        expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(LargeGraphFixture::packages(), [], $this->operation))->toThrow($exception)
+        expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['scale-1', 'scale-2'], [], $this->operation))->toThrow($exception)
             ->and(LargeGraphAdapter::$prepared)->toBe(1);
         $checkpoints = json_decode(DB::table(Tables::Runs)->value('checkpoints'), true, flags: JSON_THROW_ON_ERROR);
         expect($checkpoints['adapters']['scale-1']['prepared'])->toBeFalse();
     } finally {
         Relation::morphMap($previous, false);
     }
-})->with([
+})->group('adapter-callback-drift')->with([
     'physical store identity' => ['store', OwnershipConfigurationInvalid::class],
     'owner registry' => ['owner', InvalidArgumentException::class],
     'native morph identity' => ['morph', OwnershipConfigurationInvalid::class],

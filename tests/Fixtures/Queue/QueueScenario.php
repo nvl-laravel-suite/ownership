@@ -14,7 +14,7 @@ use Nvl\Support\Ownership\Contracts\OwnershipContext;
 final readonly class QueueScenario
 {
     /** Configure native database scheduling and persistent raw quarantine. */
-    public static function install(): void
+    public static function install(bool $reused = false): void
     {
         config()->set([
             'queue.batching.database' => DB::getDefaultConnection(),
@@ -22,6 +22,10 @@ final readonly class QueueScenario
             'queue.failed' => ['driver' => 'database-uuids', 'database' => DB::getDefaultConnection(), 'table' => 'failed_jobs'],
         ]);
         app()->forgetInstance('queue.failer');
+        if ($reused) {
+            return;
+        }
+
         $schema = DB::getSchemaBuilder();
         $schema->create('jobs', static function (Blueprint $table): void {
             $table->id();

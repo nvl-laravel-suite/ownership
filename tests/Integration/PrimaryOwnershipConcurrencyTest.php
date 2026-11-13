@@ -8,7 +8,7 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Symfony\Component\Process\Process;
 
 it('commits exactly one complete primary assignment under real competing native processes', function (): void {
-    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
+    if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
         $this->markTestSkipped('Requires the explicitly isolated native persistence database.');
     }
     $this->allowOwners();

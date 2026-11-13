@@ -12,15 +12,14 @@ use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
-/** Builds 154 distinct empty resources across nine adapters on the same SQLite store. */
+/** Builds empty native resources for adoption and metadata proofs. */
 final class LargeGraphFixture
 {
     public const int ResourceCount = 154;
 
     public const int AdapterCount = 9;
 
-    /** Register bounded fixture types without keeping hundreds of duplicate source files. */
-    public static function register(): void
+    public static function register(int $resourceCount = self::ResourceCount, bool $withAdapters = true): void
     {
         $owners = config('nvl-core.owners');
         if (! is_array($owners)) {
@@ -28,7 +27,7 @@ final class LargeGraphFixture
         }
         config(['nvl-core.owners' => [...$owners, LargeGraphOwner::class]]);
         $resources = app(OwnershipResourceRegistry::class);
-        for ($index = 1; $index <= self::ResourceCount; $index++) {
+        for ($index = 1; $index <= $resourceCount; $index++) {
             $group = ($index - 1) % self::AdapterCount + 1;
             $table = 'ownership_scale_'.$index;
             $short = 'ScaleRecord'.$index;
@@ -47,22 +46,11 @@ final class LargeGraphFixture
             });
             $resources->register(new OwnershipResourceDefinition(self::resource($index), 'scale-'.$group, $model, OwnershipDefinition::column(LargeGraphOwner::class, 'company_id')));
         }
-        for ($group = 1; $group <= self::AdapterCount; $group++) {
-            app(OwnershipAdoptionRegistry::class)->register('scale-'.$group, self::adapter($group));
-        }
-    }
-
-    /** @return list<string> */
-    public static function resources(int $group): array
-    {
-        $resources = [];
-        for ($index = 1; $index <= self::ResourceCount; $index++) {
-            if (($index - 1) % self::AdapterCount + 1 === $group) {
-                $resources[] = self::resource($index);
+        if ($withAdapters) {
+            for ($group = 1; $group <= min($resourceCount, self::AdapterCount); $group++) {
+                app(OwnershipAdoptionRegistry::class)->register('scale-'.$group, self::adapter($group));
             }
         }
-
-        return $resources;
     }
 
     /** @return list<string> */

@@ -12,22 +12,24 @@ use Nvl\Ownership\Services\OwnershipQueueContext;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Queue\HostPlainJob;
-use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\UnownedProbeJob;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipConfigurationInvalid;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
-    QueueScenario::install();
+    $this->installColumnScenario(queue: true);
     config(['queue.default' => 'database']);
+    $unownedJobs = config('nvl-ownership.queue.unowned_jobs');
+    $this->beforeApplicationDestroyed(static fn () => config(['nvl-ownership.queue.unowned_jobs' => $unownedJobs]));
 });
 
 it('refuses uncaptured host, closure and broadcast work at dispatch in an owned deployment', function (Closure $job): void {

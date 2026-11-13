@@ -41,14 +41,20 @@ use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\Services\OwnershipResourceRegistry;
 use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 use Nvl\Support\Ownership\Services\PersistedOwnershipStorage;
+use Nvl\Support\Ownership\ValueObjects\OwnerReference;
 use Nvl\Support\Ownership\ValueObjects\OwnershipDefinition;
 use Nvl\Support\Ownership\ValueObjects\OwnershipResourceDefinition;
 
 beforeEach(function (): void {
-    if (! in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true)) {
-        config(['database.connections.ownership_remote' => config('database.connections.sqlite')]);
+    $primaryOnly = in_array('primary-only-adoption', $this->groups(), true);
+    $connections = ['sqlite'];
+    if (! $primaryOnly) {
+        $connections[] = 'ownership_remote';
+        if (getenv('NVL_OWNERSHIP_TEST_DRIVER') !== 'pgsql') {
+            config(['database.connections.ownership_remote' => config('database.connections.sqlite')]);
+        }
     }
-    foreach (['sqlite', 'ownership_remote'] as $connection) {
+    foreach ($connections as $connection) {
         config(['nvl-ownership.connection' => $connection]);
         (require __DIR__.'/../../database/migrations/ownership/2026_10_18_000001_nvl_ownership_create_adoption_tables.php')->up();
         DB::connection($connection)->getSchemaBuilder()->create('ownership_test_records', static function (Blueprint $table): void {
@@ -59,12 +65,15 @@ beforeEach(function (): void {
     }
     config(['nvl-ownership.connection' => 'sqlite']);
     app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('fixture.records', 'fixture', Record::class, OwnershipDefinition::column(Company::class, 'company_id')));
-    app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('remote.records', 'remote', RemoteRecord::class, OwnershipDefinition::captured()));
     app(OwnershipAdoptionRegistry::class)->register('fixture', RecordsAdapter::class);
-    app(OwnershipAdoptionRegistry::class)->register('remote', RemoteRecordsAdapter::class);
     $this->operation = new OwnershipOperation('adopt-reviewed-records', 'operator', '1');
     $this->owner = app(OwnerIdentityResolver::class)->reference(Company::query()->findOrFail(7));
-    $this->mappings = [new OwnershipMapping('fixture.records', '1', $this->owner), new OwnershipMapping('remote.records', '1', $this->owner)];
+    $this->mappings = [new OwnershipMapping('fixture.records', '1', $this->owner)];
+    if (! $primaryOnly) {
+        app(OwnershipResourceRegistry::class)->register(new OwnershipResourceDefinition('remote.records', 'remote', RemoteRecord::class, OwnershipDefinition::captured()));
+        app(OwnershipAdoptionRegistry::class)->register('remote', RemoteRecordsAdapter::class);
+        $this->mappings[] = new OwnershipMapping('remote.records', '1', $this->owner);
+    }
     $this->app->instance(MaintenanceMode::class, new class implements MaintenanceMode
     {
         public function activate(array $payload): void {}
@@ -90,6 +99,11 @@ describe('explicit constraint refresh', function (): void {
             public function authorize(OwnershipOperation $operation): void {}
         });
         $this->coordinator = app(OwnershipAdoptionCoordinator::class);
+        $this->refreshOperation = new OwnershipOperation('ownership.constraints.refresh', 'operator', '1');
+        if (in_array('primary-only-adoption', $this->groups(), true)) {
+            return;
+        }
+
         $this->plan = $this->coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
         $this->coordinator->backfill($this->plan, 100, $this->operation);
         $this->coordinator->activate($this->plan, $this->operation);
@@ -99,7 +113,6 @@ describe('explicit constraint refresh', function (): void {
                 'owner_reference' => json_encode($this->owner->toArray(), JSON_THROW_ON_ERROR),
             ]);
         }
-        $this->refreshOperation = new OwnershipOperation('ownership.constraints.refresh', 'operator', '1');
     });
 
     it('refreshes only constraints while conserving post-adoption rows and immutable generation facts', function (): void {
@@ -194,9 +207,10 @@ describe('explicit constraint refresh', function (): void {
         $this->coordinator->backfill($plan, 100, $this->operation);
         $this->coordinator->activate($plan, $this->operation);
         $before = DB::table('nvl_ownership_adoption_runs')->where('id', $plan->id)->first();
-        expect(fn () => $this->coordinator->refreshConstraints($plan, $this->refreshOperation))->toThrow(OwnershipSchemaNotReady::class);
+        expect(fn () => $this->coordinator->refreshConstraints($plan, $this->refreshOperation))
+            ->toThrow(OwnershipSchemaNotReady::class, 'Constraint refresh requires at least one registered resource.');
         expect(DB::table('nvl_ownership_adoption_runs')->where('id', $plan->id)->first())->toEqual($before);
-    });
+    })->group('primary-only-adoption');
 
     it('conserves binary host fields without persisting private payloads in the refresh journal', function (): void {
         foreach (['sqlite', 'ownership_remote'] as $name) {
@@ -252,19 +266,19 @@ describe('explicit constraint refresh', function (): void {
 });
 
 it('denies maintenance adoption without fresh host authorization', function (): void {
-    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], $this->mappings, $this->operation))
+    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture'], $this->mappings, $this->operation))
         ->toThrow(OwnershipViolation::class);
     expect(DB::table('nvl_ownership_adoption_runs')->count())->toBe(0);
-});
+})->group('primary-only-adoption');
 
 it('rejects an explicit central mapping for a resource that requires a native owner', function (): void {
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
     {
         public function authorize(OwnershipOperation $operation): void {}
     });
-    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], [new OwnershipMapping('fixture.records', '1', null), $this->mappings[1]], $this->operation))
-        ->toThrow(OwnershipConfigurationInvalid::class);
-});
+    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture'], [new OwnershipMapping('fixture.records', '1', null)], $this->operation))
+        ->toThrow(OwnershipConfigurationInvalid::class, 'Central disposition requires an explicitly central-capable resource and no legacy tenant.');
+})->group('primary-only-adoption');
 
 it('keeps interrupted multi-source activation closed and resumes the identical plan', function (): void {
     $this->app->bind(OwnershipAdoptionAccess::class, static fn () => new class implements OwnershipAdoptionAccess
@@ -390,8 +404,13 @@ it('rejects changed immutable mapping and owner identity when resuming', functio
     });
     $coordinator = app(OwnershipAdoptionCoordinator::class);
     $plan = $coordinator->prepare(['fixture', 'remote'], $this->mappings, $this->operation);
-    DB::table('nvl_ownership_legacy_owner_mappings')->where('resource', 'fixture.records')->update(['record_id' => '99']);
-    expect(fn () => $coordinator->resume($plan->id))->toThrow(OwnershipConfigurationInvalid::class);
+    DB::table('nvl_ownership_legacy_owner_mappings')->where('resource', 'fixture.records')->update(['record_id' => '01']);
+    expect(fn () => $coordinator->resume($plan->id))
+        ->toThrow(OwnershipConfigurationInvalid::class, 'A mapping must name the exact existing physical source record.');
+
+    DB::table('nvl_ownership_legacy_owner_mappings')->where('resource', 'fixture.records')->update(['record_id' => '1']);
+    DB::table(Tables::Stores)->where('id', 1)->update(['store_id' => '550e8400-e29b-41d4-a716-446655440001']);
+    expect(fn () => $coordinator->resume($plan->id))->toThrow(OwnershipViolation::class);
 });
 
 it('fences ordinary owner entry and queue publication inside every adapter callback', function (): void {
@@ -461,6 +480,13 @@ it('rejects reviewed mappings that name a missing physical source record', funct
     });
     expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], [...$this->mappings, new OwnershipMapping('fixture.records', '999', $this->owner)], $this->operation))
         ->toThrow(OwnershipConfigurationInvalid::class);
+    config(['ownership_test.callback' => static function (): void {
+        DB::connection('ownership_remote')->table('ownership_test_records')->delete(1);
+    }]);
+    expect(fn () => app(OwnershipAdoptionCoordinator::class)->prepare(['fixture', 'remote'], $this->mappings, $this->operation))
+        ->toThrow(OwnershipConfigurationInvalid::class, 'A mapping must name the exact existing physical source record.');
+    $checkpoints = json_decode(DB::table(Tables::Runs)->value('checkpoints'), true, flags: JSON_THROW_ON_ERROR);
+    expect($checkpoints['adapters']['fixture']['prepared'])->toBeFalse();
 });
 
 it('fences native package entry during adoption after an unadopted storage probe', function (): void {
@@ -573,6 +599,9 @@ it('validates populated mappings once before and once after each adapter callbac
     {
         public function authorize(OwnershipOperation $operation): void {}
     });
+    $owner = $this->owner;
+    $this->app->instance(RecordsAdapter::class, new RecordsAdapter($owner));
+    $this->app->instance(RemoteRecordsAdapter::class, new RemoteRecordsAdapter($owner));
     $mappings = [];
     foreach (['sqlite' => 'fixture.records', 'ownership_remote' => 'remote.records'] as $connection => $resource) {
         DB::connection($connection)->table('ownership_test_records')->insert(array_map(static fn (int $id): array => ['id' => $id], range(2, 150)));
@@ -584,8 +613,8 @@ it('validates populated mappings once before and once after each adapter callbac
     $validations = 0;
     DB::listen(static function (QueryExecuted $query) use (&$queries, &$validations): void {
         $queries++;
-        if (preg_match('/^select .id. from .ownership_test_records. where .id. = \?/i', $query->sql) === 1) {
-            $validations++;
+        if (preg_match('/^select .id. from .ownership_test_records. where .id. (?:= \?|in \()/i', $query->sql) === 1) {
+            $validations += count($query->bindings);
         }
     });
     $measure = static function (Closure $phase) use (&$queries, &$validations): array {
@@ -611,6 +640,15 @@ it('validates populated mappings once before and once after each adapter callbac
 
     // 300 mappings, two adapters: one pass at phase entry (or ingestion) and one after every adapter callback.
     expect(array_column($metrics, 'validations', null))->toBe([300 * 3, 300 * 5, 300 * 3, 300 * 8])
-        ->and(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active')
-        ->and(DB::table('ownership_test_records')->whereNull('owner_scope_key')->count())->toBe(0);
+        ->and(array_sum(array_column($metrics, 'queries')))->toBeLessThanOrEqual(14000)
+        ->and(DB::table('nvl_ownership_adoption_runs')->value('status'))->toBe('active');
+    $scope = $owner->scopeKey();
+    foreach (['sqlite', 'ownership_remote'] as $connection) {
+        $rows = DB::connection($connection)->table('ownership_test_records')->get(['company_id', 'owner_scope_key', 'owner_reference']);
+        expect($rows)->toHaveCount(150)
+            ->and($rows->every(static fn (stdClass $row): bool => (string) $row->company_id === $owner->key
+                && $row->owner_scope_key === $scope
+                && is_string($row->owner_reference)
+                && OwnerReference::fromJson($row->owner_reference) == $owner))->toBeTrue();
+    }
 });

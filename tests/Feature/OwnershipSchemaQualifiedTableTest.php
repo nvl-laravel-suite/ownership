@@ -131,4 +131,14 @@ it('inspects protocol triggers and indexes of a schema-qualified table on a pref
     $inspector->assertUniqueIndexes($connection, 'ownership_tenant.parents', [['id', 'owner_scope_key']]);
     expect($connection->selectOne("select to_regclass('ownership_tenant.p_parents') as oid")->oid)->not->toBeNull()
         ->and(fn () => $constraints->assertProtected($connection, 'ownership_tenant.children'))->toThrow(OwnershipSchemaNotReady::class);
+
+    $connection->transaction(static function () use ($connection, $constraints, $inspector): void {
+        expect(fn () => $inspector->assertPresent($connection, 'ownership_tenant.missing_table', 'insert', 'valid'))
+            ->toThrow(OwnershipSchemaNotReady::class)
+            ->and(fn () => $constraints->assertProtected($connection, 'ownership_tenant.missing_table'))
+            ->toThrow(OwnershipSchemaNotReady::class)
+            ->and(fn () => $constraints->assertReference($connection, 'ownership_tenant.missing_table', 'parent_id', 'ownership_tenant.parents', 'id'))
+            ->toThrow(OwnershipSchemaNotReady::class)
+            ->and($connection->selectOne('select 1 as alive')->alive)->toBe(1);
+    });
 });

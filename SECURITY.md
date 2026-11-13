@@ -3,7 +3,7 @@
 Report vulnerabilities through [private reporting](https://github.com/nvl-laravel-suite/ownership/security/advisories/new).
 Do not disclose owner data, credentials, raw queue payloads or unredacted SQL in public issues.
 
-The prepared 6.0.0 enabled runtime has native PostgreSQL 17 and MySQL 8.4
+The prepared 7.0.0 enabled runtime has native PostgreSQL 17
 archive-consumer evidence on Laravel 13/PHP 8.4, including Redis, private storage,
 worker restoration and disabled/removed-runtime denial. Final-source release
 certification and other backend/version profiles require separate verification. Installation does

@@ -11,24 +11,20 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
 use Illuminate\Database\Schema\Grammars\Grammar;
 use Illuminate\Support\Facades\DB;
+use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\OwnershipSchema;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
+use Nvl\Ownership\Tests\Fixtures\Actor;
+use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
+use Nvl\Support\Ownership\Services\OwnershipStorageTables as Tables;
 
-beforeEach(function (): void {
+it('bounds native pivot metadata reads and denies access after a live protection is removed', function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
-});
+    $this->installNativeRootScenario(['assets.column', 'assets.pivot', 'assets.child']);
 
-it('bounds native metadata reads within each pivot schema inspection', function (): void {
     $connection = DB::connection();
     $maximumQueries = $connection->getDriverName() === 'sqlite' ? 11 : 8;
-    if (in_array($connection->getDriverName(), ['mysql', 'mariadb'], true)) {
-        foreach (['ownership_test_pivot_assets', 'ownership_test_asset_owners', 'ownership_test_child_assets'] as $table) {
-            $column = array_find($connection->getSchemaBuilder()->getColumns($table), static fn (array $column): bool => $column['name'] === 'owner_scope_key');
-            expect($column['collation'])->toBe('ascii_bin');
-        }
-    }
     $connection->enableQueryLog();
     try {
         foreach ([1, 2] as $inspection) {
@@ -41,12 +37,9 @@ it('bounds native metadata reads within each pivot schema inspection', function 
     } finally {
         $connection->disableQueryLog();
     }
-});
 
-it('does not retain schema readiness after a live protection is removed', function (): void {
     $schema = app(OwnershipSchema::class);
     $schema->assertReady('assets.pivot');
-    $connection = DB::connection();
     $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_pivot_assets|insert|valid'), 0, 32);
     $statement = 'DROP TRIGGER '.$connection->getQueryGrammar()->wrap($name);
     if ($connection->getDriverName() === 'pgsql') {
@@ -54,8 +47,12 @@ it('does not retain schema readiness after a live protection is removed', functi
     }
     $connection->statement($statement);
 
-    expect(fn () => $schema->assertReady('assets.pivot'))->toThrow(OwnershipSchemaNotReady::class);
-});
+    expect($connection->table(Tables::Markers)->where('resource', 'assets.pivot')->value('state'))->toBe('active')
+        ->and(fn () => $schema->assertReady('assets.pivot'))->toThrow(OwnershipSchemaNotReady::class);
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
+    });
+})->group('fresh-adoption');
 
 it('recognizes an existing partition foreign key on a prefixed connection instead of adding it again', function (): void {
     $schema = Mockery::mock(Builder::class);
@@ -66,18 +63,18 @@ it('recognizes an existing partition foreign key on a prefixed connection instea
     $schema->shouldNotReceive('table');
     $schema->shouldReceive('parseSchemaAndTable')->passthru();
     $connection = Mockery::mock(Connection::class);
-    $connection->shouldReceive('getDriverName')->andReturn('mysql');
+    $connection->shouldReceive('getDriverName')->andReturn('pgsql');
     $connection->shouldReceive('getTablePrefix')->andReturn('app_');
     $connection->shouldReceive('getSchemaBuilder')->andReturn($schema);
 
     (new ReflectionMethod(OwnershipSchema::class, 'partitionForeign'))->invoke(app(OwnershipSchema::class), $connection, 'assets', ['company_id', 'owner_scope_key'], 'companies', ['id', 'owner_scope_key']);
-});
+})->group('mocked-schema');
 
 it('includes a table prefix in newly created partition constraint names and leaves unprefixed names unchanged', function (string $method, string $legacy): void {
     $name = static function (string $prefix) use ($method): string {
         $names = [];
         $connection = Mockery::mock(Connection::class);
-        $connection->shouldReceive('getDriverName')->andReturn('mysql');
+        $connection->shouldReceive('getDriverName')->andReturn('pgsql');
         $connection->shouldReceive('getTablePrefix')->andReturn($prefix);
         $connection->shouldReceive('getSchemaGrammar')->andReturn(Mockery::mock(Grammar::class));
         $schema = Mockery::mock(Builder::class);
@@ -103,7 +100,7 @@ it('includes a table prefix in newly created partition constraint names and leav
         ->and($name('a_'))->not->toBe($name('b_'))
         ->and($name('a_'))->toBe($name('a_'))
         ->and(strlen($name('a_')))->toBe(strlen($legacy));
-})->with([
+})->group('mocked-schema')->with([
     'partition foreign key' => ['partitionForeign', 'nvl_own_f_'.substr(hash('sha256', 'assets["company_id","owner_scope_key"]'), 0, 32)],
     'partition unique key' => ['unique', 'nvl_own_u_'.substr(hash('sha256', 'assets["id","owner_scope_key"]'), 0, 32)],
 ]);
@@ -133,4 +130,4 @@ it('adds partition constraints for the same logical table under two prefixes of 
         expect($connection->getSchemaBuilder()->getForeignKeys('prefix_children'))->toHaveCount(1)
             ->and($connection->getSchemaBuilder()->getForeignKeys('prefix_children')[0]['foreign_table'])->toBe($prefix.'prefix_parents');
     }
-});
+})->group('fresh-adoption');

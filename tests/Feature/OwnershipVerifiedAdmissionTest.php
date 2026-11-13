@@ -12,6 +12,7 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\OwnershipVerifiedAdmissions;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
@@ -20,9 +21,19 @@ use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\ValueObjects\OwnershipSnapshot;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
+    if (in_array('connection-identity-only', $this->groups(), true)) {
+        return;
+    }
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    if (in_array('fresh-adoption', $this->groups(), true)) {
+        ResourceScenario::installColumn($this->app);
+    } else {
+        ResourceScenario::installColumnAndPivot($this->app, $this->hasRetainedOwnershipSchema());
+        $this->retainAdoptedOwnershipSchema(ResourceScenario::ColumnAndPivotSeedTables);
+    }
     $this->statements = static function (Closure $work): int {
         DB::flushQueryLog();
         DB::enableQueryLog();
@@ -80,7 +91,7 @@ it('verifies again after a coordinated adoption mutation', function (): void {
     );
 
     expect($verified->has($snapshot, 'assets.column', $connection))->toBeFalse();
-});
+})->group('fresh-adoption');
 
 it('remembers a verification only for the exact snapshot, resource and connection object', function (): void {
     $verified = new OwnershipVerifiedAdmissions;
@@ -105,4 +116,4 @@ it('remembers a verification only for the exact snapshot, resource and connectio
 
     expect($verified->has($snapshot, 'assets.column', $connection))->toBeFalse()
         ->and($verified->owner($snapshot, $connection))->toBeNull();
-});
+})->group('connection-identity-only', 'fresh-adoption');

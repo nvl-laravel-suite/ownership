@@ -15,21 +15,23 @@ use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Services\PublicOwnerSiteRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueLifecycleJob;
-use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\QueueStateProbe;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Enums\OwnershipContextMode;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 use Nvl\Support\Ownership\ValueObjects\VerifiedOwnerSiteContext;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
-    QueueScenario::install();
-    QueueStateProbe::install();
+    if (! $this->hasRetainedOwnershipSchema()) {
+        QueueStateProbe::install();
+    }
+    $this->installColumnScenario(queue: true);
     config(['queue.default' => 'database']);
     app()->setLocale('en');
 });

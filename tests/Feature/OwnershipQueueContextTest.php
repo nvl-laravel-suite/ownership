@@ -23,7 +23,7 @@ use Nvl\Support\Ownership\ValueObjects\OwnershipJobEnvelope;
 
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    ResourceScenario::installColumn($this->app);
 });
 
 it('re-admits captured owners and restores a different surrounding worker scope on failure', function (): void {
@@ -64,7 +64,7 @@ it('rejects stale installation generations and disabled workers before their cal
 
 it('rejects actor source drift even when another store has the same native actor id', function (): void {
     $envelope = app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), fn (): OwnershipJobEnvelope => OwnershipJobEnvelope::capture(app(OwnershipContext::class)));
-    $connection = in_array(getenv('NVL_OWNERSHIP_TEST_DRIVER'), ['pgsql', 'mysql', 'mariadb'], true) ? config('database.connections.ownership_remote') : config('database.connections.sqlite');
+    $connection = getenv('NVL_OWNERSHIP_TEST_DRIVER') === 'pgsql' ? config('database.connections.ownership_remote') : config('database.connections.sqlite');
     config()->set('database.connections.ownership_actor_remote', $connection);
     $remote = DB::connection('ownership_actor_remote');
     $remote->getSchemaBuilder()->create('ownership_test_actors', static function (Blueprint $table): void {

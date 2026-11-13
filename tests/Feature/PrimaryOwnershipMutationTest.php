@@ -11,16 +11,18 @@ use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
 use Nvl\Ownership\Tests\Fixtures\Company;
+use Nvl\Ownership\Tests\Fixtures\OptsIntoAdoptedSchemaReuse;
 use Nvl\Ownership\Tests\Fixtures\Resources\CapturedOperation;
 use Nvl\Ownership\Tests\Fixtures\Resources\PivotAsset;
-use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipBoundary;
 use Nvl\Support\Ownership\Exceptions\OwnershipSchemaNotReady;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 
+uses(OptsIntoAdoptedSchemaReuse::class);
+
 beforeEach(function (): void {
     $this->allowOwners();
-    ResourceScenario::install($this->app);
+    $this->installNativeRootScenario(['assets.column', 'assets.pivot', 'assets.captured', 'assets.child']);
 });
 
 it('rejects raw primary owner changes and ordinary pivot attach detach and update conveniences', function (): void {
@@ -52,19 +54,6 @@ it('does not trust a loaded pivot relation and retains source cascade deletion',
     });
 });
 
-it('refuses access when a live partition constraint is missing despite active adoption markers', function (): void {
-    $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_pivot_assets|insert|valid'), 0, 32);
-    $connection = DB::connection();
-    $statement = 'DROP TRIGGER '.$connection->getQueryGrammar()->wrap($name);
-    if ($connection->getDriverName() === 'pgsql') {
-        $statement .= ' ON ownership_test_pivot_assets';
-    }
-    $connection->statement($statement);
-    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
-        expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
-    });
-});
-
 it('denies a missing primary pivot and never uses its loaded owner collection as a fallback', function (): void {
     $connection = DB::connection();
     $name = 'nvl_own_'.substr(hash('sha256', 'ownership_test_asset_owners|delete|primary'), 0, 32);
@@ -77,7 +66,7 @@ it('denies a missing primary pivot and never uses its loaded owner collection as
     app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
         expect(fn () => PivotAsset::query()->get())->toThrow(OwnershipSchemaNotReady::class);
     });
-});
+})->group('fresh-adoption');
 
 it('rejects foreign instance counters before observers or native SQL including quiet mutation', function (): void {
     DB::table('ownership_test_captured_operations')->where('id', 2)->update(['subject_id' => 0]);

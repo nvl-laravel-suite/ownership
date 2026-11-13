@@ -38,7 +38,7 @@ final class NativeDatabaseSource
     {
         $driver = $connection->getDriverName();
         $database = $connection->getConfig('database');
-        if (! in_array($driver, ['pgsql', 'mysql', 'mariadb'], true)
+        if ($driver !== 'pgsql'
             || ! is_string($database)
             || preg_match('/^nvl_own_test_[a-z0-9_]+$/D', $database) !== 1
             || $connection->transactionLevel() !== 0) {
@@ -49,10 +49,9 @@ final class NativeDatabaseSource
         $pdoDriver = $connection->getPdo()->getAttribute(PDO::ATTR_DRIVER_NAME);
         $serverVersion = $connection->getPdo()->getAttribute(PDO::ATTR_SERVER_VERSION);
         $processId = getmypid();
-        $connectionId = filter_var($connection->scalar($driver === 'pgsql' ? 'SELECT pg_backend_pid()' : 'SELECT CONNECTION_ID()'), FILTER_VALIDATE_INT);
-        if ($pdoDriver !== ($driver === 'mariadb' ? 'mysql' : $driver)
+        $connectionId = filter_var($connection->scalar('SELECT pg_backend_pid()'), FILTER_VALIDATE_INT);
+        if ($pdoDriver !== $driver
             || ! is_string($serverVersion) || $serverVersion === ''
-            || ($driver === 'mariadb' && stripos($serverVersion, 'mariadb') === false)
             || ! is_int($processId) || $processId < 1
             || ! is_int($connectionId) || $connectionId < 1) {
             throw new RuntimeException('A native worker selected an unexpected ORM, PDO, or physical database source.');
