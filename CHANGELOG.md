@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [7.0.5] - 2026-11-13
+
 ### Changed
 
 - Support SQLite and PostgreSQL for ownership adoption and runtime enforcement.
@@ -9,6 +11,12 @@
 ### Fixed
 
 - Compare `OwnerReference` and `VerifiedOwnerSiteContext` identities strictly without loose PHP numeric-string coercion (`'007'` vs `'7'`), inspect PostgreSQL relations via `to_regclass(?)`, and honor attached SQLite catalog schemas and binary text collations.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- harden package runtime safety, PostgreSQL portability and test performance
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.4] - 2026-11-11
 
