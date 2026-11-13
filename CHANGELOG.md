@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [7.0.6] - 2026-11-13
+
 ### Fixed
 
 - Reject switching between distinct numeric string owner keys inside a participating transaction while allowing equivalent owner references.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- close package transaction, event and query parity gaps
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.0.5] - 2026-11-13
 
