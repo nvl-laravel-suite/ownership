@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Require `nvl/core` 7.3.0, whose `TestServiceHosts` the package test fixtures use for disposable database and Redis hosts.
+
 ## [7.0.6] - 2026-11-13
 
 ### Fixed
