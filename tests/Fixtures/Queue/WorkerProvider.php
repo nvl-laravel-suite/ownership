@@ -17,6 +17,7 @@ use Nvl\Ownership\Tests\Fixtures\Company;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Support\Ownership\Contracts\OwnershipContext;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
+use Nvl\Support\Testing\TestServiceHosts;
 
 /** Boots only host policy and the same immutable fixture graph in a separate process. */
 final class WorkerProvider extends ServiceProvider
@@ -62,7 +63,7 @@ final class WorkerProvider extends ServiceProvider
             'cache.stores.redis.lock_connection' => 'ownership_worker',
             'database.redis.client' => 'phpredis',
             'database.redis.options.prefix' => self::$options['prefix'] ?? 'ownership-worker-proof:',
-            'database.redis.ownership_worker' => ['host' => '127.0.0.1', 'port' => self::$options['redis_port'] ?? 16389, 'database' => 0],
+            'database.redis.ownership_worker' => ['host' => TestServiceHosts::redisHost(), 'port' => self::$options['redis_port'] ?? 16389, 'database' => 0],
             'queue.connections.redis.connection' => 'ownership_worker',
             'queue.connections.redis.queue' => 'default',
             'queue.connections.redis.retry_after' => 10,

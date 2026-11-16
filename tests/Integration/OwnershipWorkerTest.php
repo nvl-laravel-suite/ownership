@@ -25,6 +25,7 @@ use Nvl\Ownership\Tests\Fixtures\Queue\QueueScenario;
 use Nvl\Ownership\Tests\Fixtures\Queue\UniqueJob;
 use Nvl\Ownership\Tests\Fixtures\Resources\ColumnAsset;
 use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
+use Nvl\Support\Testing\TestServiceHosts;
 use Symfony\Component\Process\Process;
 
 it('preserves captured ownership through a real worker retry exhaustion and raw quarantine', function (string $driver): void {
@@ -52,7 +53,7 @@ it('preserves captured ownership through a real worker retry exhaustion and raw 
         'cache.stores.redis.lock_connection' => 'ownership_worker',
         'database.redis.client' => 'phpredis',
         'database.redis.options.prefix' => $options['prefix'],
-        'database.redis.ownership_worker' => ['host' => '127.0.0.1', 'port' => $options['redis_port'], 'database' => 0],
+        'database.redis.ownership_worker' => ['host' => TestServiceHosts::redisHost(), 'port' => $options['redis_port'], 'database' => 0],
         'queue.connections.redis.connection' => 'ownership_worker',
         'queue.connections.redis.queue' => 'default',
         'queue.connections.redis.retry_after' => 10,

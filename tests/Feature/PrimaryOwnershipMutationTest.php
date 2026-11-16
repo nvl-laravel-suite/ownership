@@ -77,7 +77,11 @@ it('rejects foreign instance counters before observers or native SQL including q
     });
     app(OwnershipRunner::class)->run(Company::findOrFail(7), Actor::firstOrFail(), function () use ($foreign): void {
         expect(fn () => $foreign->increment('subject_id'))->toThrow(OwnershipViolation::class)
-            ->and(fn () => $foreign->decrementQuietly('subject_id'))->toThrow(OwnershipViolation::class);
+            ->and(fn () => $foreign->decrementQuietly('subject_id'))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $foreign->incrementEach(['subject_id' => 1]))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $foreign->decrementEach(['subject_id' => 1]))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $foreign->incrementEachQuietly(['subject_id' => 1]))->toThrow(OwnershipViolation::class)
+            ->and(fn () => $foreign->decrementEachQuietly(['subject_id' => 1]))->toThrow(OwnershipViolation::class);
     });
     expect($observed)->toBe(0)
         ->and(DB::table('ownership_test_captured_operations')->where('id', 2)->value('subject_id'))->toBe(0);
