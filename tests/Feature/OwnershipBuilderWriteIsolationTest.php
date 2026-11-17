@@ -6,7 +6,6 @@ if (! in_array(dirname(__DIR__).'/Pest.php', get_included_files(), true)) {
     uses('Nvl\\Ownership\\Tests\\OwnershipTestCase');
 }
 
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Nvl\Ownership\Services\OwnershipRunner;
 use Nvl\Ownership\Tests\Fixtures\Actor;
@@ -58,7 +57,7 @@ it('refuses a builder force delete without an admitted owner', function (): void
 
 it('cannot update another owner through a forwarded update-or-insert', function (): void {
     expect(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->updateOrInsert(['id' => 2], ['name' => 'taken'])))
-        ->toThrow(QueryException::class)
+        ->toThrow(OwnershipViolation::class)
         ->and(DB::table('ownership_test_column_assets')->where('id', 2)->value('name'))->not->toBe('taken');
 
     asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->updateOrInsert(['id' => 1], ['name' => 'renamed']));
@@ -84,3 +83,54 @@ it('leaves an explicitly unscoped builder native', function (): void {
     expect($deleted)->toBe(1)
         ->and(columnAssetOwners())->toBe([1 => 7]);
 });
+
+function columnAssetScope(int $id): string
+{
+    return (string) DB::table('ownership_test_column_assets')->where('id', $id)->value('owner_scope_key');
+}
+
+it('cannot update another owner through a scoped upsert', function (): void {
+    $row = ['id' => 2, 'company_id' => 7, 'owner_scope_key' => columnAssetScope(1), 'name' => 'taken'];
+
+    expect(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->upsert([$row], ['id'], ['name'])))
+        ->toThrow(OwnershipViolation::class)
+        ->and(DB::table('ownership_test_column_assets')->where('id', 2)->value('name'))->toBe('private-8');
+});
+
+it('cannot insert a row for another owner through the scoped builder', function (string $method): void {
+    $foreign = ['id' => 3, 'company_id' => 8, 'owner_scope_key' => columnAssetScope(2), 'name' => 'forged'];
+
+    expect(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->{$method}($foreign)))
+        ->toThrow(OwnershipViolation::class)
+        ->and(columnAssetOwners())->toBe([1 => 7, 2 => 8]);
+})->with(['insert', 'insertOrIgnore', 'insertGetId']);
+
+it('cannot insert another owner row through a scoped update-or-insert', function (): void {
+    $foreign = ['company_id' => 8, 'owner_scope_key' => columnAssetScope(2), 'name' => 'forged'];
+
+    expect(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->updateOrInsert(['id' => 3], $foreign)))
+        ->toThrow(OwnershipViolation::class)
+        ->and(columnAssetOwners())->toBe([1 => 7, 2 => 8]);
+});
+
+it('refuses a scoped insert from a source query whose rows cannot be verified', function (): void {
+    $source = DB::table('ownership_test_column_assets')->where('id', 2)->select(['company_id', 'owner_scope_key', 'name'])->selectRaw('3 as id');
+
+    expect(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->insertUsing(['company_id', 'owner_scope_key', 'name', 'id'], $source)))
+        ->toThrow(OwnershipViolation::class)
+        ->and(columnAssetOwners())->toBe([1 => 7, 2 => 8]);
+});
+
+it('inserts and upserts rows carrying the admitted owner within its partition', function (): void {
+    DB::statement('CREATE UNIQUE INDEX ownership_test_column_assets_partition_name ON ownership_test_column_assets (owner_scope_key, name)');
+    $scope = columnAssetScope(1);
+
+    asColumnAssetOwner(7, static function () use ($scope): void {
+        ColumnAsset::query()->insert(['id' => 3, 'company_id' => 7, 'owner_scope_key' => $scope, 'name' => 'inserted']);
+        ColumnAsset::query()->upsert([['id' => 4, 'company_id' => '7', 'owner_scope_key' => $scope, 'name' => 'private-7']], ['owner_scope_key', 'name'], ['name' => 'upserted']);
+    });
+
+    expect(DB::table('ownership_test_column_assets')->orderBy('id')->pluck('name', 'id')->all())->toBe([1 => 'upserted', 2 => 'private-8', 3 => 'inserted'])
+        ->and(static fn (): mixed => asColumnAssetOwner(7, static fn (): mixed => ColumnAsset::query()->upsert([['id' => 1, 'company_id' => 7, 'owner_scope_key' => $scope, 'name' => 'x']], ['id'], ['name'])))
+        ->toThrow(OwnershipViolation::class);
+})->group('fresh-adoption');

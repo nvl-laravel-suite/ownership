@@ -74,6 +74,6 @@ final readonly class OwnershipDoctor
 
         return ['key' => 'ownership.builders', 'severity' => 'warning', 'passed' => $unguarded === [], 'message' => $unguarded === []
             ? 'Owned model builders keep scope-free writes inside the boundary.'
-            : 'Use ScopesOwnedBuilderWrites on the custom builders of ['.implode(', ', $unguarded).']; their forceDelete(), updateOrInsert() and updateFrom() are not owner-scoped.'];
+            : 'Use ScopesOwnedBuilderWrites on the custom builders of ['.implode(', ', $unguarded).']; their bulk writes (forceDelete(), updateOrInsert(), updateFrom(), insert and upsert) are not owner-scoped.'];
     }
 }

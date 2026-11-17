@@ -34,10 +34,15 @@ it('preserves native JSON no-ops and rejects immutable JSON value-type changes',
 
 it('retains exact immutable text across case-insensitive SQL collations', function (string $mode): void {
     $connection = DB::connection();
-    $connection->getSchemaBuilder()->create('ownership_immutable_text_guards', static function (Blueprint $table): void {
+    $collation = 'NOCASE';
+    if ($connection->getDriverName() === 'pgsql') {
+        $connection->statement("CREATE COLLATION IF NOT EXISTS nvl_ownership_case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false)");
+        $collation = 'nvl_ownership_case_insensitive';
+    }
+    $connection->getSchemaBuilder()->create('ownership_immutable_text_guards', static function (Blueprint $table) use ($collation): void {
         $table->unsignedBigInteger('id')->primary();
         $table->string('owner_scope_key');
-        $table->string('external_key')->nullable();
+        $table->string('external_key')->nullable()->collation($collation);
     });
     $scope = 'owner:'.str_repeat('a', 64);
     $constraints = app(OwnershipDatabaseConstraints::class);

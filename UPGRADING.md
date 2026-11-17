@@ -18,6 +18,17 @@ An earlier experimental replacement-plan attempt may already have left an
 interrupted run; preserve that evidence for reviewed recovery rather than
 deleting its run, mappings or source markers.
 
+Unreleased: protected-field triggers now compare values exactly regardless of
+column collation (SQLite `COLLATE BINARY`, PostgreSQL `to_jsonb()`). A table
+whose owner key, native identity or frozen field uses a case-insensitive or
+nondeterministic collation keeps accepting case-only changes until its triggers
+are reinstalled with the same `refreshConstraints()` procedure. Builder writes on
+owned models (with the matching `nvl/core` release) are admitted like model writes: give public
+sites the writable resources they bulk-write, insert rows with the fields from
+`OwnershipBoundary::attributes()`, include `owner_scope_key` in every owned
+`upsert()` `$uniqueBy` (backed by a matching unique index), and replace owned
+`insertUsing()` with verified row inserts.
+
 `nvl:queue:retry` is registered by `nvl/core`; the class
 `Nvl\Ownership\Console\Commands\QueueQuarantineRetryCommand` no longer exists. The
 command name, arguments and output are unchanged. Once the runtime is enabled with

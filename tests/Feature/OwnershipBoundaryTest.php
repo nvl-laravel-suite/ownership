@@ -107,3 +107,14 @@ it('keeps native string owner 007 distinct from 7 without integer or UUID coerci
         });
     }
 });
+
+it('qualifies the captured owner reference so a joined captured query stays unambiguous', function (): void {
+    app(OwnershipRunner::class)->run(Company::query()->findOrFail(7), Actor::query()->firstOrFail(), function (): void {
+        $names = CapturedOperation::query()
+            ->join('ownership_test_captured_operations as peer', 'peer.id', '=', 'ownership_test_captured_operations.id')
+            ->pluck('ownership_test_captured_operations.name')
+            ->all();
+
+        expect($names)->toBe(['private-7']);
+    });
+});

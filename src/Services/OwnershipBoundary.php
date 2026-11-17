@@ -245,11 +245,7 @@ final readonly class OwnershipBoundary implements BoundaryContract
                 $query->whereNull($model->qualifyColumn('owner_reference'));
             } else {
                 $json = json_encode($snapshot->owner->toArray(), JSON_THROW_ON_ERROR);
-                match ($model->getConnection()->getDriverName()) {
-                    'pgsql' => $query->whereRaw('owner_reference::jsonb = ?::jsonb', [$json]),
-                    'sqlite' => $query->whereRaw('json(owner_reference) = json(?)', [$json]),
-                    default => throw new OwnershipConfigurationInvalid('Unsupported ownership query driver.'),
-                };
+                $query->whereRaw(new OwnershipReferenceMatch($model->qualifyColumn('owner_reference')), [$json]);
             }
         } elseif ($definition->strategy === 'inherited') {
             $parents = $this->container->make(InheritedOwnershipResolver::class);

@@ -50,15 +50,9 @@ final readonly class OwnershipDatabaseConstraints
         foreach ($immutable as $column) {
             $old = 'OLD.'.$wrap($column);
             $new = 'NEW.'.$wrap($column);
-            if ($connection->getDriverName() === 'pgsql' && $column === 'owner_reference') {
-                $old .= '::jsonb';
-                $new .= '::jsonb';
-            }
-            $changes[] = match ($connection->getDriverName()) {
-                'pgsql' => $old.' IS DISTINCT FROM '.$new,
-                'sqlite' => $old.' IS NOT '.$new,
-                default => throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.'),
-            };
+            $changes[] = $connection->getDriverName() === 'pgsql' && $column === 'owner_reference'
+                ? $old.'::jsonb IS DISTINCT FROM '.$new.'::jsonb'
+                : $this->changed($connection, $old, $new);
         }
         $this->trigger($connection, $table, 'update', 'immutable', '('.$invalid.') OR (OLD.'.$wrap('owner_scope_key').' IS NOT NULL AND ('.implode(' OR ', $changes).'))');
     }
@@ -75,11 +69,7 @@ final readonly class OwnershipDatabaseConstraints
         foreach ($fields as $column) {
             $old = 'OLD.'.$grammar->wrap($column);
             $new = 'NEW.'.$grammar->wrap($column);
-            $different = match ($connection->getDriverName()) {
-                'pgsql' => 'to_jsonb('.$old.') IS DISTINCT FROM to_jsonb('.$new.')',
-                'sqlite' => $old.' IS NOT '.$new,
-                default => throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.'),
-            };
+            $different = $this->changed($connection, $old, $new);
             if ($eraseStatuses !== []) {
                 $statuses = implode(',', array_map(fn (string $v): string => $connection->getPdo()->quote($v), $eraseStatuses));
                 $different = '('.$different.') AND NOT ('.$new.' IS NULL AND NEW.'.$grammar->wrap($statusColumn).' IN ('.$statuses.'))';
@@ -107,11 +97,7 @@ final readonly class OwnershipDatabaseConstraints
         foreach ($fields as $field) {
             $old = 'OLD.'.$connection->getQueryGrammar()->wrap($field);
             $new = 'NEW.'.$connection->getQueryGrammar()->wrap($field);
-            $different = match ($connection->getDriverName()) {
-                'pgsql' => $old.' IS DISTINCT FROM '.$new,
-                'sqlite' => $old.' IS NOT '.$new,
-                default => throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.'),
-            };
+            $different = $this->changed($connection, $old, $new);
             $changes[] = '('.$old.' IS NOT NULL AND ('.$different.'))';
         }
         $condition = implode(' OR ', $changes);
@@ -262,6 +248,16 @@ final readonly class OwnershipDatabaseConstraints
             return;
         }
         throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.');
+    }
+
+    /** Compare stored values exactly, independently of any case-insensitive or nondeterministic column collation. */
+    private function changed(Connection $connection, string $old, string $new): string
+    {
+        return match ($connection->getDriverName()) {
+            'pgsql' => 'to_jsonb('.$old.') IS DISTINCT FROM to_jsonb('.$new.')',
+            'sqlite' => $old.' COLLATE BINARY IS NOT '.$new.' COLLATE BINARY',
+            default => throw new OwnershipConfigurationInvalid('Unsupported ownership constraint driver.'),
+        };
     }
 
     /** Keep protocol identifiers stable and within every supported engine's length limit. */

@@ -18,6 +18,7 @@ use Nvl\Ownership\Tests\Fixtures\Resources\ResourceScenario;
 use Nvl\Ownership\Tests\Fixtures\ReusesAdoptedSchema;
 use Nvl\Support\Ownership\Exceptions\OwnershipViolation;
 use Nvl\Support\Providers\SupportServiceProvider;
+use Nvl\Support\Testing\TestServiceHosts;
 use Orchestra\Testbench\TestCase;
 
 /** Boots only the neutral Core and optional Ownership runtime against native host keys. */
@@ -63,7 +64,11 @@ abstract class OwnershipTestCase extends TestCase
         if ($primary === $remote) {
             throw new \RuntimeException('Persistence tests require distinct primary and remote databases.');
         }
-        $connection = ['driver' => 'pgsql', 'host' => getenv('NVL_OWNERSHIP_TEST_HOST') ?: '/tmp', 'port' => getenv('NVL_OWNERSHIP_TEST_PORT') ?: '5432', 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: get_current_user(), 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
+        $host = getenv('NVL_OWNERSHIP_TEST_HOST') ?: '/tmp';
+        if (! TestServiceHosts::admitsDatabaseHost($host)) {
+            throw new \RuntimeException('Persistence tests require an admitted test database host.');
+        }
+        $connection = ['driver' => 'pgsql', 'host' => $host, 'port' => getenv('NVL_OWNERSHIP_TEST_PORT') ?: '5432', 'database' => $primary, 'username' => getenv('NVL_OWNERSHIP_TEST_USERNAME') ?: get_current_user(), 'password' => getenv('NVL_OWNERSHIP_TEST_PASSWORD') ?: '', 'charset' => 'utf8', 'prefix' => '', 'search_path' => 'public', 'sslmode' => 'prefer', 'timezone' => 'UTC'];
         $app['config']->set('database.connections.sqlite', ['url' => null, ...$connection]);
         $app['config']->set('database.connections.ownership_remote', ['url' => null, ...$connection, 'database' => $remote]);
     }

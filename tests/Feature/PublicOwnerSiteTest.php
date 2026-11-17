@@ -218,3 +218,32 @@ it('uses canonical native origins for scheduled discovery and rechecks current a
     }))->toThrow(OwnershipViolation::class);
     expect($called)->toBeFalse();
 });
+
+it('refuses bulk builder writes to a resource the public site may only read', function (string $write): void {
+    $scope = (string) DB::table('ownership_test_column_assets')->where('id', 1)->value('owner_scope_key');
+    $row = ['id' => 9, 'company_id' => 7, 'owner_scope_key' => $scope, 'name' => 'public write'];
+    $writes = [
+        'update' => static fn (): mixed => ColumnAsset::query()->update(['name' => 'public write']),
+        'delete' => static fn (): mixed => ColumnAsset::query()->delete(),
+        'force delete' => static fn (): mixed => ColumnAsset::query()->forceDelete(),
+        'increment' => static fn (): mixed => ColumnAsset::query()->increment('company_id', 0),
+        'decrement each' => static fn (): mixed => ColumnAsset::query()->decrementEach(['company_id' => 0]),
+        'insert' => static fn (): mixed => ColumnAsset::query()->insert($row),
+        'insert or ignore' => static fn (): mixed => ColumnAsset::query()->insertOrIgnore($row),
+        'upsert' => static fn (): mixed => ColumnAsset::query()->upsert([$row], ['owner_scope_key', 'id'], ['name']),
+        'update or insert' => static fn (): mixed => ColumnAsset::query()->updateOrInsert(['id' => 1], ['name' => 'public write']),
+    ];
+
+    app(PublicOwnerSiteRunner::class)->run('https://a.public.test', static function () use ($writes, $write): void {
+        expect($writes[$write])->toThrow(OwnershipViolation::class);
+    });
+    expect(DB::table('ownership_test_column_assets')->orderBy('id')->pluck('name', 'id')->all())->toBe([1 => 'private-7', 2 => 'private-8']);
+})->with(['update', 'delete', 'force delete', 'increment', 'decrement each', 'insert', 'insert or ignore', 'upsert', 'update or insert']);
+
+it('admits bulk builder updates to a resource the public site may write', function (): void {
+    publicOwnerSiteMapping(writable: ['assets.column']);
+
+    app(PublicOwnerSiteRunner::class)->run('https://a.public.test', static fn (): mixed => ColumnAsset::query()->update(['name' => 'public write']));
+
+    expect(DB::table('ownership_test_column_assets')->orderBy('id')->pluck('name', 'id')->all())->toBe([1 => 'public write', 2 => 'private-8']);
+});
