@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [7.2.0] - 2026-11-17
+
 ### Changed
 
 - Requires `nvl/core` ^7.4.0, which admits owned bulk builder writes.
@@ -11,6 +13,12 @@
 - Captured-ownership queries qualify `owner_reference` with the model table, so a captured resource joined to another table with the same column no longer fails as an ambiguous column.
 - Immutable, frozen and assigned-identity triggers compare stored values exactly: SQLite compares with `COLLATE BINARY` and PostgreSQL through `to_jsonb()`, so a case-only change of a protected value is rejected even on a case-insensitive (`NOCASE`) or nondeterministic column collation. Existing triggers keep the old comparison until `OwnershipAdoptionCoordinator::refreshConstraints()` reinstalls them (see UPGRADING.md).
 - With the matching `nvl/core` release, bulk builder writes on owned resources are admitted: a public site writes only its writable resources, builder inserts must carry the admitted ownership fields and an owned `upsert()` resolves conflicts by `owner_scope_key`. The doctor's custom-builder warning names these writes.
+
+<!-- NVL GENERATED CHANGES START -->
+### Changed
+
+- consumer-audit fixes across the suite, UTC timestamps, core/forms release ordering
+<!-- NVL GENERATED CHANGES END -->
 
 ## [7.1.0] - 2026-11-17
 
